@@ -256,14 +256,6 @@ system_setup() {
 
 	eval "$(parse_yaml config.yaml "cfg_")"
 
-	# Config values for the media setup
-	# shellcheck disable=SC2154
-	echo "$cfg_media_device $cfg_media_pool $cfg_media_optn $cfg_media_luks" > /dev/null
-
-	# Config values for the new environment
-	# shellcheck disable=SC2154
-	echo "$cfg_droot_host $cfg_droot_addr $cfg_droot_user $cfg_droot_path $cfg_droot_dist" > /dev/null
-
 	#----------------------------------------------------------------------------
 	log "Setup environment, user and access"
 	#----------------------------------------------------------------------------
@@ -366,4 +358,3 @@ system_setup() {
 	sudo chmod +x system_setup.sh
 	suds "mv system_setup.sh $cfg_droot_path/root/scadrial/"
 }
-

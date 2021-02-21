@@ -1,8 +1,6 @@
 #!/bin/bash
 #############################################################################
 # Prepare the Install Media
-# Debootstrap: https://www.linuxquestions.org/questions/debian-26/how-to-install-debian-using-debootstrap-4175465295/
-
 #----------------------------------------------------------------------------
 # Load the source functions
 #----------------------------------------------------------------------------
@@ -34,6 +32,7 @@ while test $# -gt 0; do
         ;;
     install)
 		# Check if meadia already configured.
+		# shellcheck disable=SC2154
 		if [ "$(df --output=target | grep -c "${cfg_droot_path}")" == "4" ]; then
 			shelp
 			log "The media is already configured. Please use 'force' or 'repair' parameter."
