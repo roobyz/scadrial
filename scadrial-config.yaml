@@ -18,3 +18,4 @@ droot:
   # https://ubuntu.com/blog/ubuntu-bionic-netplan
   ndev: eno1
   time: America/Los_Angeles
+  krnl: 5.8

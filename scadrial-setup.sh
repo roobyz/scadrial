@@ -15,7 +15,7 @@ fi
 
 eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 # Uncommend the following lines to debug YAML variables
-# parse_yaml config.yaml "cfg_"
+# parse_yaml scadrial-config.yaml "cfg_"
 # exit
 
 declare -a pre_reqs=("sudo" "cryptsetup" "ssh-keygen" "sgdisk" "partprobe" "debootstrap" "wipefs")

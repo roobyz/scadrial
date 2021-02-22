@@ -6,7 +6,7 @@ echo "$cfg_media_device $cfg_media_pool $cfg_media_optn $cfg_media_luks" > /dev/
 
 # Config values for the new environment
 # shellcheck disable=SC2154
-echo "$cfg_droot_host $cfg_droot_addr $cfg_droot_user $cfg_droot_path $cfg_droot_dist" > /dev/null
+echo "$cfg_droot_host $cfg_droot_addr $cfg_droot_user $cfg_droot_path $cfg_droot_dist $cfg_droot_krnl" > /dev/null
 
 shelp() {
     echo "
@@ -144,12 +144,14 @@ media_mount() {
     log "Mount the partitions"
     #----------------------------------------------------------------------------
     suds "rm -rf ${cfg_droot_path}"
-    suds "mkdir ${cfg_droot_path}"
-    suds "mount -o ${cfg_media_optn},subvol=@ /dev/mapper/crypt_root ${cfg_droot_path}"
-    suds "mkdir -p ${cfg_droot_path}/{boot/efi,home,data,var}"
+    suds "mkdir -p ${cfg_droot_path}"
+    suds "mount -o ${cfg_media_optn},subvol=@      /dev/mapper/crypt_root ${cfg_droot_path}"
+    suds "mkdir -p ${cfg_droot_path}/boot"
+    suds "mount -o ${cfg_media_optn},subvol=@boot  /dev/mapper/crypt_root ${cfg_droot_path}/boot"
+    suds "mkdir -p ${cfg_droot_path}/{boot/efi,home,opt/mistborn_volumes,var}"
     suds "mount ${cfg_media_device}1 ${cfg_droot_path}/boot/efi"
     suds "mount -o ${cfg_media_optn},subvol=@home  /dev/mapper/crypt_root ${cfg_droot_path}/home"
-    suds "mount -o ${cfg_media_optn},subvol=@data  /dev/mapper/crypt_root ${cfg_droot_path}/data"
+    suds "mount -o ${cfg_media_optn},subvol=@data  /dev/mapper/crypt_root ${cfg_droot_path}/opt/mistborn_volumes"
     suds "mount -o ${cfg_media_optn},subvol=@var   /dev/mapper/crypt_root ${cfg_droot_path}/var"
     suds "mkdir -p ${cfg_droot_path}/{var/log,var/tmp}"
     suds "mount -o ${cfg_media_optn},subvol=@log   /dev/mapper/crypt_root ${cfg_droot_path}/var/log"
@@ -219,6 +221,7 @@ media_setup() {
     suds "rm -rf ${cfg_media_pool} && mkdir ${cfg_media_pool}"
     suds "mount -t btrfs -o ${cfg_media_optn} /dev/mapper/crypt_root ${cfg_media_pool}"
     suds "btrfs subvolume create ${cfg_media_pool}/@"
+    suds "btrfs subvolume create ${cfg_media_pool}/@boot"
     suds "btrfs subvolume create ${cfg_media_pool}/@home"
     suds "btrfs subvolume create ${cfg_media_pool}/@data"
     suds "btrfs subvolume create ${cfg_media_pool}/@var"
@@ -254,7 +257,7 @@ system_setup() {
 	# shellcheck disable=SC1091
 	source "lib/functions.sh"
 
-	eval "$(parse_yaml config.yaml "cfg_")"
+	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
 	#----------------------------------------------------------------------------
 	log "Setup environment, user and access"
@@ -299,6 +302,7 @@ system_setup() {
 
 	cat <<- EOF | tee /etc/fstab
 	UUID=$croot  /               btrfs   rw,${cfg_media_optn},subvol=@                           0 0
+	UUID=$croot  /boot           btrfs   rw,${cfg_media_optn},subvol=@boot                       0 0
 	UUID=$eboot  /boot/efi       vfat    rw,umask=0077                                           0 1
 	UUID=$croot  /home           btrfs   rw,${cfg_media_optn},subvol=@home,nosuid,nodev          0 0
 	UUID=$croot  /data           btrfs   rw,${cfg_media_optn},subvol=@data,nosuid,nodev,noexec   0 0
@@ -313,11 +317,15 @@ system_setup() {
 	#----------------------------------------------------------------------------
 	log "Install applications and kernel"
 	#----------------------------------------------------------------------------
+	echo "deb http://archive.ubuntu.com/ubuntu focal-updates main" >> /etc/apt/sources.list
+	echo "deb http://archive.ubuntu.com/ubuntu focal-backports main" >> /etc/apt/sources.list
 	apt-get update
-	apt-get install -y linux-image-generic btrfs-progs cryptsetup cryptsetup-initramfs ssh gdisk git \
-	debootstrap ssh parted net-tools ca-certificates iproute2 initramfs-tools --no-install-recommends
+	kernel=$(apt-cache search linux-image-${cfg_droot_krnl} | grep generic | tail -n 1 | awk -F' - ' '{print $1}')
 
-	#echo 'HOOKS="base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' >> /etc/mkinitcpio.conf
+	apt-get install -y "$kernel" cryptsetup initramfs-tools cryptsetup-initramfs git ssh \
+	gdisk btrfs-progs debootstrap parted net-tools ca-certificates iproute2 --no-install-recommends
+
+	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' >> /etc/mkinitcpio.conf
 	echo "KEYFILE_PATTERN=/etc/luks/*.keyfile" >> /etc/cryptsetup-initramfs/conf-hook
 	echo "UMASK=0077" >> /etc/initramfs-tools/initramfs.conf
 
@@ -342,16 +350,39 @@ system_setup() {
 	options cryptdevice=PARTUUID=${pluks}:${cfg_media_luks}:allow-discards root=/dev/mapper/${cfg_media_luks} rootflags=subvol=@ rd.luks.options=discard rw
 	EOF
 
-	LATEST="$(cd /boot/ && ls vmlinuz-* | sed s/vmlinuz-//)"
+	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
 	for FILE in config initrd.img System.map vmlinuz; do
 		cp "/boot/${FILE}-${LATEST}" "/boot/efi/ubuntu/${FILE}"
 	done
 
-	#----------------------------------------------------------------------------
-	log "Finalize systemd-boot"
-	#----------------------------------------------------------------------------
 	update-initramfs -u -k all
 	bootctl install --path=/boot/efi
+
+	#----------------------------------------------------------------------------
+	log "Hardening setup"
+	#----------------------------------------------------------------------------
+	# sudo apt-get -y install bats
+	# git clone https://github.com/konstruktoid/hardening.git
+
+	# cd hardening/tests/
+	# sudo bats .
+
+	# Update our hardening configuration file
+	# vpn_net=10.$(dd if=/dev/urandom bs=2 count=1 2>/dev/null | od -An -tu1 | sed -e 's/^ *//' -e 's/  */./g')
+	# vpn_prt=$(echo $(od -An -N2 -i < /dev/urandom)  | xargs)
+	# sed -i "s/FW_ADMIN='127.0.0.1'/FW_ADMIN='${vpn_net}.0\/24'/g" ubuntu.cfg
+	# sed -i "s/CHANGEME=''/CHANGEME='N'/g" ubuntu.cfg
+
+	#----------------------------------------------------------------------------
+	log "Mistborn installation"
+	#----------------------------------------------------------------------------
+	# replace all instances of 10.2.3.1 with ${vpn_net}.1
+	# git clone https://gitlab.com/cyber5k/mistborn.git
+	# sudo -E bash ./mistborn/scripts/install.sh
+	# log "Watch the installation happens with:"
+	# echo "sudo journalctl -xfu Mistborn-base"
+	# log "Type the following to get the admin Wireguard profile:
+	# echo "sudo mistborn-cli getconf"
 	SEOF
 
 	# Move the second step script to our media device
