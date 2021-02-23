@@ -139,7 +139,9 @@ media_mount() {
 		read -rs passphrase
 		# passphrase=123456
 	fi
-	open_luks "$passphrase"
+
+	# shellcheck disable=SC2086
+	open_luks $passphrase
 
     log "Mount the partitions"
     #----------------------------------------------------------------------------
@@ -211,6 +213,7 @@ media_setup() {
     #----------------------------------------------------------------------------
     suds "echo -n $passphrase | cryptsetup -v --iter-time 5000 --type luks2 \
         --hash sha512 --use-random luksFormat --key-file=- ${cfg_device_name}2"
+	# shellcheck disable=SC2086
     open_luks $passphrase
 
     log "Create filesystems"
@@ -247,7 +250,7 @@ system_setup() {
 	#----------------------------------------------------------------------------
 	suds "mkdir -p  $cfg_droot_path/home"
 	suds "cp -r     $cfg_droot_path/etc/skel $cfg_droot_path/home/$cfg_droot_user"
-	suds "mkdir -p  $cfg_droot_path/home/scadrial"
+	suds "mkdir -p  $cfg_droot_path/home/$cfg_droot_user/scadrial"
 	suds "cp -r ./* $cfg_droot_path/home/$cfg_droot_user/scadrial/"
 
 	cat <<- 'SEOF' > system_01_finalize.sh
