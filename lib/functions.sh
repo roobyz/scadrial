@@ -6,7 +6,7 @@ echo "$cfg_device_name $cfg_device_pool $cfg_device_optn $cfg_device_luks" > /de
 
 # Config values for the new environment
 # shellcheck disable=SC2154
-echo "$cfg_droot_host $cfg_droot_addr $cfg_droot_user $cfg_droot_path $cfg_dist_name $cfg_device_vers" > /dev/null
+echo "$cfg_droot_host $cfg_droot_addr $cfg_droot_user $cfg_droot_path $cfg_dist_name $cfg_dist_vers" > /dev/null
 
 shelp() {
     echo "
@@ -167,8 +167,8 @@ media_setup() {
     #----------------------------------------------------------------------------
 
 	log "Enter passphrase:"
-	# read -rs passphrase
-	passphrase=123456
+	read -rs passphrase
+	# passphrase=123456
 
     #----------------------------------------------------------------------------
     log "Generate ssh key pair on the client (i.e. laptop)"
@@ -247,6 +247,7 @@ system_setup() {
 	#----------------------------------------------------------------------------
 	suds "mkdir -p  $cfg_droot_path/home"
 	suds "cp -r     $cfg_droot_path/etc/skel $cfg_droot_path/home/$cfg_droot_user"
+	suds "mkdir -p  $cfg_droot_path/home/scadrial"
 	suds "cp -r ./* $cfg_droot_path/home/$cfg_droot_user/scadrial/"
 
 	cat <<- 'SEOF' > system_01_finalize.sh
@@ -273,7 +274,7 @@ system_setup() {
 	sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	echo "$cfg_droot_host" > /etc/hostname
 	echo LANG=en_US.UTF-8 > /etc/locale.conf
-	ln -sf /usr/share/zoneinfo/${cfg_dist_tzne} /etc/localtime
+	ln -sf /usr/share/zoneinfo/${cfg_droot_tzne} /etc/localtime
 	locale-gen en_US.UTF-8
 
 	cat <<- EOF > /etc/netplan/01-netcfg.yaml
@@ -324,10 +325,8 @@ system_setup() {
 	echo "deb http://archive.ubuntu.com/ubuntu focal-updates main universe" >> /etc/apt/sources.list
 	echo "deb http://archive.ubuntu.com/ubuntu focal-backports main universe" >> /etc/apt/sources.list
 	apt-get update && apt-get -y upgrade
-	# kernel=$(apt-cache search linux-image-${cfg_device_vers} | grep generic | tail -n 1 | awk -F' - ' '{print $1}')
-	# modules=$(apt-cache search linux-modules-extra-${cfg_device_vers} | grep generic | tail -n 1 | awk -F' - ' '{print $1}')
 
-	kernel="linux-image-generic-hwe-${cfg_device_vers}"
+	kernel="linux-image-generic-hwe-${cfg_dist_vers}"
 
 	apt-get install -y "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils \
 	gdisk btrfs-progs debootstrap parted net-tools ca-certificates iproute2 fwupd iptables --no-install-recommends
