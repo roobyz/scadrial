@@ -2,7 +2,7 @@
 
 # Config values for the media setup
 # shellcheck disable=SC2154
-echo "$cfg_media_device $cfg_media_pool $cfg_media_optn $cfg_device_luks" > /dev/null
+echo "$cfg_device_name $cfg_device_pool $cfg_device_optn $cfg_device_luks" > /dev/null
 
 # Config values for the new environment
 # shellcheck disable=SC2154
@@ -129,7 +129,7 @@ open_luks() {
 	if [ "$(sudo blkid | grep -c /dev/mapper/crypt_root)" == 0 ]; then
 		echo "Luks Unlocked"
 		suds "echo -n ${1} | cryptsetup --key-file=- \
-			luksOpen ${cfg_media_device}2 ${cfg_device_luks}"
+			luksOpen ${cfg_device_name}2 ${cfg_device_luks}"
 	fi
 }
 
@@ -145,19 +145,19 @@ media_mount() {
     #----------------------------------------------------------------------------
     suds "rm -rf ${cfg_droot_path}"
     suds "mkdir -p ${cfg_droot_path}"
-    suds "mount -o ${cfg_media_optn},subvol=@      /dev/mapper/crypt_root ${cfg_droot_path}"
+    suds "mount -o ${cfg_device_optn},subvol=@      /dev/mapper/crypt_root ${cfg_droot_path}"
     suds "mkdir -p ${cfg_droot_path}/boot"
-    suds "mount -o ${cfg_media_optn},subvol=@boot  /dev/mapper/crypt_root ${cfg_droot_path}/boot"
+    suds "mount -o ${cfg_device_optn},subvol=@boot  /dev/mapper/crypt_root ${cfg_droot_path}/boot"
     suds "mkdir -p ${cfg_droot_path}/{boot/efi,home,opt/mistborn_volumes,var}"
-    suds "mount ${cfg_media_device}1 ${cfg_droot_path}/boot/efi"
-    suds "mount -o ${cfg_media_optn},subvol=@home  /dev/mapper/crypt_root ${cfg_droot_path}/home"
-    suds "mount -o ${cfg_media_optn},subvol=@data  /dev/mapper/crypt_root ${cfg_droot_path}/opt/mistborn_volumes"
-    suds "mount -o ${cfg_media_optn},subvol=@var   /dev/mapper/crypt_root ${cfg_droot_path}/var"
+    suds "mount ${cfg_device_name}1 ${cfg_droot_path}/boot/efi"
+    suds "mount -o ${cfg_device_optn},subvol=@home  /dev/mapper/crypt_root ${cfg_droot_path}/home"
+    suds "mount -o ${cfg_device_optn},subvol=@data  /dev/mapper/crypt_root ${cfg_droot_path}/opt/mistborn_volumes"
+    suds "mount -o ${cfg_device_optn},subvol=@var   /dev/mapper/crypt_root ${cfg_droot_path}/var"
     suds "mkdir -p ${cfg_droot_path}/{var/log,var/tmp}"
-    suds "mount -o ${cfg_media_optn},subvol=@log   /dev/mapper/crypt_root ${cfg_droot_path}/var/log"
+    suds "mount -o ${cfg_device_optn},subvol=@log   /dev/mapper/crypt_root ${cfg_droot_path}/var/log"
     suds "mkdir -p ${cfg_droot_path}/var/log/audit"
-    suds "mount -o ${cfg_media_optn},subvol=@audit /dev/mapper/crypt_root ${cfg_droot_path}/var/log/audit"
-    suds "mount -o ${cfg_media_optn},subvol=@tmp   /dev/mapper/crypt_root ${cfg_droot_path}/var/tmp"
+    suds "mount -o ${cfg_device_optn},subvol=@audit /dev/mapper/crypt_root ${cfg_droot_path}/var/log/audit"
+    suds "mount -o ${cfg_device_optn},subvol=@tmp   /dev/mapper/crypt_root ${cfg_droot_path}/var/tmp"
 }
 
 media_setup() {
@@ -197,39 +197,39 @@ media_setup() {
 
 	media_reset
 
-    suds "sgdisk -og ${cfg_media_device} \
+    suds "sgdisk -og ${cfg_device_name} \
     --new=1::+260M  --typecode=1:EF00 --change-name=1:'EFI partition' \
     --new=2::0      --typecode=2:8304 --change-name=2:'Linux partition'"
 
-    suds "sgdisk -p ${cfg_media_device}"
-    suds "partprobe ${cfg_media_device}"
+    suds "sgdisk -p ${cfg_device_name}"
+    suds "partprobe ${cfg_device_name}"
 
-    suds "wipefs -af ${cfg_media_device}1"
-    suds "wipefs -af ${cfg_media_device}2"
+    suds "wipefs -af ${cfg_device_name}1"
+    suds "wipefs -af ${cfg_device_name}2"
 
     log "Setup encryption"
     #----------------------------------------------------------------------------
     suds "echo -n $passphrase | cryptsetup -v --iter-time 5000 --type luks2 \
-        --hash sha512 --use-random luksFormat --key-file=- ${cfg_media_device}2"
+        --hash sha512 --use-random luksFormat --key-file=- ${cfg_device_name}2"
     open_luks $passphrase
 
     log "Create filesystems"
     #----------------------------------------------------------------------------
-    suds "mkfs.vfat -vF32 ${cfg_media_device}1"
+    suds "mkfs.vfat -vF32 ${cfg_device_name}1"
     suds "mkfs.btrfs -L crypt_root /dev/mapper/${cfg_device_luks}"
 
-    suds "rm -rf ${cfg_media_pool} && mkdir ${cfg_media_pool}"
-    suds "mount -t btrfs -o ${cfg_media_optn} /dev/mapper/crypt_root ${cfg_media_pool}"
-    suds "btrfs subvolume create ${cfg_media_pool}/@"
-    suds "btrfs subvolume create ${cfg_media_pool}/@boot"
-    suds "btrfs subvolume create ${cfg_media_pool}/@home"
-    suds "btrfs subvolume create ${cfg_media_pool}/@data"
-    suds "btrfs subvolume create ${cfg_media_pool}/@var"
-    suds "btrfs subvolume create ${cfg_media_pool}/@log"
-    suds "btrfs subvolume create ${cfg_media_pool}/@audit"
-    suds "btrfs subvolume create ${cfg_media_pool}/@tmp"
+    suds "rm -rf ${cfg_device_pool} && mkdir ${cfg_device_pool}"
+    suds "mount -t btrfs -o ${cfg_device_optn} /dev/mapper/crypt_root ${cfg_device_pool}"
+    suds "btrfs subvolume create ${cfg_device_pool}/@"
+    suds "btrfs subvolume create ${cfg_device_pool}/@boot"
+    suds "btrfs subvolume create ${cfg_device_pool}/@home"
+    suds "btrfs subvolume create ${cfg_device_pool}/@data"
+    suds "btrfs subvolume create ${cfg_device_pool}/@var"
+    suds "btrfs subvolume create ${cfg_device_pool}/@log"
+    suds "btrfs subvolume create ${cfg_device_pool}/@audit"
+    suds "btrfs subvolume create ${cfg_device_pool}/@tmp"
 
-    suds "umount ${cfg_media_pool}"
+    suds "umount ${cfg_device_pool}"
 
 	media_mount
 
@@ -293,25 +293,25 @@ system_setup() {
 	#----------------------------------------------------------------------------
 	log "Configure partion files"
 	#----------------------------------------------------------------------------
-	pluks="$(blkid -s PARTUUID -o value ${cfg_media_device}2)"
+	pluks="$(blkid -s PARTUUID -o value ${cfg_device_name}2)"
 	# Setup the device UUID that contains our luks volume
 	echo "# <target name>	<source device>		<key file>	<options>" > /etc/crypttab
 	echo "$cfg_device_luks PARTUUID=$pluks none luks,discard" >> /etc/crypttab
 
 	# Setup the partitions
-	eboot="$(blkid -s UUID -o value ${cfg_media_device}1)"
+	eboot="$(blkid -s UUID -o value ${cfg_device_name}1)"
 	croot="$(blkid -s UUID -o value /dev/mapper/$cfg_device_luks)"
 
 	cat <<- EOF | tee /etc/fstab
-	UUID=$croot  /                     btrfs   rw,${cfg_media_optn},subvol=@                           0 0
-	UUID=$croot  /boot                 btrfs   rw,${cfg_media_optn},subvol=@boot                       0 0
+	UUID=$croot  /                     btrfs   rw,${cfg_device_optn},subvol=@                           0 0
+	UUID=$croot  /boot                 btrfs   rw,${cfg_device_optn},subvol=@boot                       0 0
 	UUID=$eboot                                   /boot/efi       vfat    rw,umask=0077                                           0 1
-	UUID=$croot  /home                 btrfs   rw,${cfg_media_optn},subvol=@home,nosuid,nodev          0 0
-	UUID=$croot  /opt/mistborn_volumes btrfs   rw,${cfg_media_optn},subvol=@data,nosuid,nodev,noexec   0 0
-	UUID=$croot  /var                  btrfs   rw,${cfg_media_optn},subvol=@var                        0 0
-	UUID=$croot  /var/log              btrfs   rw,${cfg_media_optn},subvol=@log,nosuid,nodev,noexec    0 0
-	UUID=$croot  /var/log/audit        btrfs   rw,${cfg_media_optn},subvol=@audit,nosuid,nodev,noexec  0 0
-	UUID=$croot  /var/tmp              btrfs   rw,${cfg_media_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
+	UUID=$croot  /home                 btrfs   rw,${cfg_device_optn},subvol=@home,nosuid,nodev          0 0
+	UUID=$croot  /opt/mistborn_volumes btrfs   rw,${cfg_device_optn},subvol=@data,nosuid,nodev,noexec   0 0
+	UUID=$croot  /var                  btrfs   rw,${cfg_device_optn},subvol=@var                        0 0
+	UUID=$croot  /var/log              btrfs   rw,${cfg_device_optn},subvol=@log,nosuid,nodev,noexec    0 0
+	UUID=$croot  /var/log/audit        btrfs   rw,${cfg_device_optn},subvol=@audit,nosuid,nodev,noexec  0 0
+	UUID=$croot  /var/tmp              btrfs   rw,${cfg_device_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
 	tmpfs                                           /tmp            tmpfs   rw,nosuid,nodev,noexec
 	# Swap in zram (adjust for your needs)
 	# /dev/zram0        none    swap    defaults      0 0
