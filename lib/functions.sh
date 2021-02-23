@@ -2,7 +2,7 @@
 
 # Config values for the media setup
 # shellcheck disable=SC2154
-echo "$cfg_media_device $cfg_media_pool $cfg_media_optn $cfg_media_luks" > /dev/null
+echo "$cfg_media_device $cfg_media_pool $cfg_media_optn $cfg_device_luks" > /dev/null
 
 # Config values for the new environment
 # shellcheck disable=SC2154
@@ -115,7 +115,7 @@ media_reset() {
       suds "umount ${p}"
 
       # close encrypted device
-      suds "cryptsetup luksClose ${cfg_media_luks}"
+      suds "cryptsetup luksClose ${cfg_device_luks}"
       break
     fi
 
@@ -129,7 +129,7 @@ open_luks() {
 	if [ "$(sudo blkid | grep -c /dev/mapper/crypt_root)" == 0 ]; then
 		echo "Luks Unlocked"
 		suds "echo -n ${1} | cryptsetup --key-file=- \
-			luksOpen ${cfg_media_device}2 ${cfg_media_luks}"
+			luksOpen ${cfg_media_device}2 ${cfg_device_luks}"
 	fi
 }
 
@@ -216,7 +216,7 @@ media_setup() {
     log "Create filesystems"
     #----------------------------------------------------------------------------
     suds "mkfs.vfat -vF32 ${cfg_media_device}1"
-    suds "mkfs.btrfs -L crypt_root /dev/mapper/${cfg_media_luks}"
+    suds "mkfs.btrfs -L crypt_root /dev/mapper/${cfg_device_luks}"
 
     suds "rm -rf ${cfg_media_pool} && mkdir ${cfg_media_pool}"
     suds "mount -t btrfs -o ${cfg_media_optn} /dev/mapper/crypt_root ${cfg_media_pool}"
@@ -296,11 +296,11 @@ system_setup() {
 	pluks="$(blkid -s PARTUUID -o value ${cfg_media_device}2)"
 	# Setup the device UUID that contains our luks volume
 	echo "# <target name>	<source device>		<key file>	<options>" > /etc/crypttab
-	echo "$cfg_media_luks PARTUUID=$pluks none luks,discard" >> /etc/crypttab
+	echo "$cfg_device_luks PARTUUID=$pluks none luks,discard" >> /etc/crypttab
 
 	# Setup the partitions
 	eboot="$(blkid -s UUID -o value ${cfg_media_device}1)"
-	croot="$(blkid -s UUID -o value /dev/mapper/$cfg_media_luks)"
+	croot="$(blkid -s UUID -o value /dev/mapper/$cfg_device_luks)"
 
 	cat <<- EOF | tee /etc/fstab
 	UUID=$croot  /                     btrfs   rw,${cfg_media_optn},subvol=@                           0 0
@@ -355,7 +355,7 @@ system_setup() {
 	title   Ubuntu
 	linux   /ubuntu/vmlinuz
 	initrd  /ubuntu/initrd.img
-	options cryptdevice=PARTUUID=${pluks}:${cfg_media_luks}:allow-discards root=/dev/mapper/${cfg_media_luks} rootflags=subvol=@ rd.luks.options=discard rw
+	options cryptdevice=PARTUUID=${pluks}:${cfg_device_luks}:allow-discards root=/dev/mapper/${cfg_device_luks} rootflags=subvol=@ rd.luks.options=discard rw
 	EOF
 
 	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
