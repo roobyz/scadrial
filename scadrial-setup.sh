@@ -18,6 +18,9 @@ eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 # parse_yaml scadrial-config.yaml "cfg_"
 # exit
 
+# shellcheck disable=SC2154
+echo "$cfg_droot_user $cfg_droot_path" > /dev/null
+
 declare -a pre_reqs=("sudo" "cryptsetup" "ssh-keygen" "sgdisk" "partprobe" "debootstrap" "wipefs")
 for i in "${pre_reqs[@]}"; do
 	cmd_check "$i"
@@ -32,7 +35,6 @@ while test $# -gt 0; do
         ;;
     install)
 		# Check if meadia already configured.
-		# shellcheck disable=SC2154
 		if [ "$(df --output=target | grep -c "${cfg_droot_path}")" == "4" ]; then
 			shelp
 			log "The media is already configured. Please use 'force' or 'repair' parameter."
@@ -54,7 +56,7 @@ while test $# -gt 0; do
         media_mount
 		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_droot_path/$b"; done
 		log "To enter the new system for debugging, type the following:"
-		echo "sudo chroot $cfg_droot_path /bin/bash"
+		echo "sudo chroot $cfg_droot_path /bin/bash" && echo
 		exit 0
         ;;
     repair)
@@ -70,11 +72,11 @@ while test $# -gt 0; do
     shift
 done
 
+system_setup
+
 #----------------------------------------------------------------------------
-log "To enter and setup the new system, type the following:"
+log "Enter the new system and finalize our setup, by running the following:"
 #----------------------------------------------------------------------------
 echo "sudo chroot $cfg_droot_path /bin/bash"
-echo "cd /root/scadrial/"
-echo "./system_setup.sh"
-
-system_setup
+echo "cd /home/$cfg_droot_user/scadrial"
+echo "./system_01_finalize.sh"

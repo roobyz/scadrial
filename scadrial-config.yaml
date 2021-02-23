@@ -1,21 +1,22 @@
 # This file contains high level configuration parameters for setup 
 
+# Parameters for the Ubuntu distribution
+dist:
+  name: focal
+  vers: 20.04
 # Parameters for destination media
-media:
-  device: /dev/sda
+device:
+  name: /dev/sda
   pool: /mnt/btrfs_pool
   optn: ssd,noatime,compress=zstd,commit=120
   luks: crypt_root
-
 # Parameters for chroot environment
 droot:
   path: /mnt/debootpath
-  dist: focal
   user: mistborn
   host: scadrial
-  addr: 172.26.75.103
+  tzne: America/Los_Angeles
   # https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-consistent_network_device_naming
   # https://ubuntu.com/blog/ubuntu-bionic-netplan
   ndev: eno1
-  time: America/Los_Angeles
-  krnl: 5.8
+  addr: 172.26.75.103

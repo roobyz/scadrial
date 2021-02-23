@@ -6,7 +6,7 @@ echo "$cfg_media_device $cfg_media_pool $cfg_media_optn $cfg_media_luks" > /dev/
 
 # Config values for the new environment
 # shellcheck disable=SC2154
-echo "$cfg_droot_host $cfg_droot_addr $cfg_droot_user $cfg_droot_path $cfg_droot_dist $cfg_droot_krnl" > /dev/null
+echo "$cfg_droot_host $cfg_droot_addr $cfg_droot_user $cfg_droot_path $cfg_dist_name $cfg_device_vers" > /dev/null
 
 shelp() {
     echo "
@@ -136,10 +136,10 @@ open_luks() {
 media_mount() {
 	if [ -z "${passphrase:-}" ]; then
 		log "Enter passphrase:"
-		# read -rs passphrase
-		passphrase=123456
+		read -rs passphrase
+		# passphrase=123456
 	fi
-	open_luks $passphrase
+	open_luks "$passphrase"
 
     log "Mount the partitions"
     #----------------------------------------------------------------------------
@@ -236,19 +236,20 @@ media_setup() {
     #----------------------------------------------------------------------------
     log "Bootstrap the new system"
     #----------------------------------------------------------------------------
-    suds "debootstrap --arch amd64 $cfg_droot_dist $cfg_droot_path" http://archive.ubuntu.com/ubuntu
+    suds "debootstrap --arch amd64 $cfg_dist_name $cfg_droot_path" http://archive.ubuntu.com/ubuntu
     for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_droot_path/$b"; done
 
 }
 
 system_setup() {
 	#----------------------------------------------------------------------------
-    log "Setup the new system script."
+    log "Generate final system script."
 	#----------------------------------------------------------------------------
-	suds "mkdir -p $cfg_droot_path/root/scadrial/"
-	suds "cp -r ./* $cfg_droot_path/root/scadrial/"
+	suds "mkdir -p  $cfg_droot_path/home"
+	suds "cp -r     $cfg_droot_path/etc/skel $cfg_droot_path/home/$cfg_droot_user"
+	suds "cp -r ./* $cfg_droot_path/home/$cfg_droot_user/scadrial/"
 
-	cat <<- 'SEOF' > system_setup.sh
+	cat <<- 'SEOF' > system_01_finalize.sh
 	#!/bin/bash
 
 	#----------------------------------------------------------------------------
@@ -262,15 +263,17 @@ system_setup() {
 	#----------------------------------------------------------------------------
 	log "Setup environment, user and access"
 	#----------------------------------------------------------------------------
-	useradd -m -s /bin/bash "$cfg_droot_user"
+	useradd -M -s /bin/bash "$cfg_droot_user"
 	passwd "$cfg_droot_user"
 	usermod -a -G sudo "$cfg_droot_user"
+
+	suds "chown -R $cfg_droot_user:$cfg_droot_user /home/scadrial"
 
 	sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	echo "$cfg_droot_host" > /etc/hostname
 	echo LANG=en_US.UTF-8 > /etc/locale.conf
-	ln -sf /usr/share/zoneinfo/${cfg_droot_time} /etc/localtime
+	ln -sf /usr/share/zoneinfo/${cfg_dist_tzne} /etc/localtime
 	locale-gen en_US.UTF-8
 
 	cat <<- EOF > /etc/netplan/01-netcfg.yaml
@@ -282,7 +285,6 @@ system_setup() {
 	  ethernets:
 	    ${cfg_droot_ndev}:
 	      dhcp4: yes
-	      dhcp6: yes
 	EOF
 
 	sudo netplan generate
@@ -294,22 +296,23 @@ system_setup() {
 	pluks="$(blkid -s PARTUUID -o value ${cfg_media_device}2)"
 	# Setup the device UUID that contains our luks volume
 	echo "# <target name>	<source device>		<key file>	<options>" > /etc/crypttab
-	echo "$cfg_media_luks PARTUUID=$pluks none luks,discard,initramfs" >> /etc/crypttab
+	echo "$cfg_media_luks PARTUUID=$pluks none luks,discard" >> /etc/crypttab
 
 	# Setup the partitions
 	eboot="$(blkid -s UUID -o value ${cfg_media_device}1)"
 	croot="$(blkid -s UUID -o value /dev/mapper/$cfg_media_luks)"
 
 	cat <<- EOF | tee /etc/fstab
-	UUID=$croot  /               btrfs   rw,${cfg_media_optn},subvol=@                           0 0
-	UUID=$croot  /boot           btrfs   rw,${cfg_media_optn},subvol=@boot                       0 0
-	UUID=$eboot  /boot/efi       vfat    rw,umask=0077                                           0 1
-	UUID=$croot  /home           btrfs   rw,${cfg_media_optn},subvol=@home,nosuid,nodev          0 0
-	UUID=$croot  /data           btrfs   rw,${cfg_media_optn},subvol=@data,nosuid,nodev,noexec   0 0
-	UUID=$croot  /var            btrfs   rw,${cfg_media_optn},subvol=@var                        0 0
-	UUID=$croot  /var/log        btrfs   rw,${cfg_media_optn},subvol=@log,nosuid,nodev,noexec    0 0
-	UUID=$croot  /var/log/audit  btrfs   rw,${cfg_media_optn},subvol=@audit,nosuid,nodev,noexec  0 0
-	UUID=$croot  /var/tmp        btrfs   rw,${cfg_media_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
+	UUID=$croot  /                     btrfs   rw,${cfg_media_optn},subvol=@                           0 0
+	UUID=$croot  /boot                 btrfs   rw,${cfg_media_optn},subvol=@boot                       0 0
+	UUID=$eboot                                   /boot/efi       vfat    rw,umask=0077                                           0 1
+	UUID=$croot  /home                 btrfs   rw,${cfg_media_optn},subvol=@home,nosuid,nodev          0 0
+	UUID=$croot  /opt/mistborn_volumes btrfs   rw,${cfg_media_optn},subvol=@data,nosuid,nodev,noexec   0 0
+	UUID=$croot  /var                  btrfs   rw,${cfg_media_optn},subvol=@var                        0 0
+	UUID=$croot  /var/log              btrfs   rw,${cfg_media_optn},subvol=@log,nosuid,nodev,noexec    0 0
+	UUID=$croot  /var/log/audit        btrfs   rw,${cfg_media_optn},subvol=@audit,nosuid,nodev,noexec  0 0
+	UUID=$croot  /var/tmp              btrfs   rw,${cfg_media_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
+	tmpfs                                           /tmp            tmpfs   rw,nosuid,nodev,noexec
 	# Swap in zram (adjust for your needs)
 	# /dev/zram0        none    swap    defaults      0 0
 	EOF
@@ -317,16 +320,21 @@ system_setup() {
 	#----------------------------------------------------------------------------
 	log "Install applications and kernel"
 	#----------------------------------------------------------------------------
-	echo "deb http://archive.ubuntu.com/ubuntu focal-updates main" >> /etc/apt/sources.list
-	echo "deb http://archive.ubuntu.com/ubuntu focal-backports main" >> /etc/apt/sources.list
-	apt-get update
-	kernel=$(apt-cache search linux-image-${cfg_droot_krnl} | grep generic | tail -n 1 | awk -F' - ' '{print $1}')
+	echo "deb http://archive.ubuntu.com/ubuntu focal main universe" > /etc/apt/sources.list
+	echo "deb http://archive.ubuntu.com/ubuntu focal-updates main universe" >> /etc/apt/sources.list
+	echo "deb http://archive.ubuntu.com/ubuntu focal-backports main universe" >> /etc/apt/sources.list
+	apt-get update && apt-get -y upgrade
+	# kernel=$(apt-cache search linux-image-${cfg_device_vers} | grep generic | tail -n 1 | awk -F' - ' '{print $1}')
+	# modules=$(apt-cache search linux-modules-extra-${cfg_device_vers} | grep generic | tail -n 1 | awk -F' - ' '{print $1}')
 
-	apt-get install -y "$kernel" cryptsetup initramfs-tools cryptsetup-initramfs git ssh \
-	gdisk btrfs-progs debootstrap parted net-tools ca-certificates iproute2 --no-install-recommends
+	kernel="linux-image-generic-hwe-${cfg_device_vers}"
 
-	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' >> /etc/mkinitcpio.conf
-	echo "KEYFILE_PATTERN=/etc/luks/*.keyfile" >> /etc/cryptsetup-initramfs/conf-hook
+	apt-get install -y "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils \
+	gdisk btrfs-progs debootstrap parted net-tools ca-certificates iproute2 fwupd iptables --no-install-recommends
+
+	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
+	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
+	sed -i "/UMASK=0077/d" /etc/initramfs-tools/initramfs.conf
 	echo "UMASK=0077" >> /etc/initramfs-tools/initramfs.conf
 
 	mkdir -p /home/${cfg_droot_user}/.ssh && touch /home/${cfg_droot_user}/.ssh/authorized_keys
@@ -359,33 +367,78 @@ system_setup() {
 	bootctl install --path=/boot/efi
 
 	#----------------------------------------------------------------------------
+	log "Clone git repos"
+	#----------------------------------------------------------------------------
+	git clone https://github.com/sstephenson/bats.git
+	git clone https://github.com/konstruktoid/hardening.git
+	git clone https://gitlab.com/cyber5k/mistborn.git
+	sed -i "s|cp ./config/tmp.mount|#cp ./config/tmp.mount|g" ./hardening/scripts/08_fstab
+
+	#----------------------------------------------------------------------------
+	log "The initial media configuration complete. Pending steps to complete on the host."
+	echo "Exit chroot and umount our media, as follows:"
+	#----------------------------------------------------------------------------
+	echo "exit"
+	echo "./scadrial-setup.sh unmount"
+
+	#----------------------------------------------------------------------------
+	log "After booting into our new host, login as 'mistborn' user and run the following:"
+	#----------------------------------------------------------------------------
+	echo "cd scadrial"
+	echo "sudo ./system_02_harden.sh"
+	echo "sudo ./system_03_mistborn.sh"
+	SEOF
+
+	cat <<- 'SEOF' > system_02_harden.sh
+	#!/bin/bash
+	# shellcheck disable=SC1091
+	source "lib/functions.sh"
+
+	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
+
+	#----------------------------------------------------------------------------
 	log "Hardening setup"
 	#----------------------------------------------------------------------------
-	# sudo apt-get -y install bats
-	# git clone https://github.com/konstruktoid/hardening.git
-
-	# cd hardening/tests/
-	# sudo bats .
+	(cd bats && ./install.sh /usr/local)
 
 	# Update our hardening configuration file
-	# vpn_net=10.$(dd if=/dev/urandom bs=2 count=1 2>/dev/null | od -An -tu1 | sed -e 's/^ *//' -e 's/  */./g')
-	# vpn_prt=$(echo $(od -An -N2 -i < /dev/urandom)  | xargs)
-	# sed -i "s/FW_ADMIN='127.0.0.1'/FW_ADMIN='${vpn_net}.0\/24'/g" ubuntu.cfg
-	# sed -i "s/CHANGEME=''/CHANGEME='N'/g" ubuntu.cfg
+	export vpn_net=10.$(dd if=/dev/urandom bs=2 count=1 2>/dev/null | od -An -tu1 | sed -e 's/^ *//' -e 's/  */./g')
+	export vpn_prt=$(echo $(od -An -N2 -i < /dev/urandom)  | xargs)
+	(cd hardening && \
+	sed -i "s/FW_ADMIN='127.0.0.1'/FW_ADMIN='${vpn_net}.0\/24'/g" ubuntu.cfg && \
+	sed -i "s/CHANGEME=''/CHANGEME='N'/g" ubuntu.cfg)
+	# replace all instances of Mistborn 10.2.3.1 with ${vpn_net}.1
+	sed -i "s/10.2.3.1/${vpn_net}.1/g" ./mistborn/scripts/install.sh
+
+	# Run security initial assessment
+	(cd hardening/tests/ && sudo bats . > ../bats-results1.log)
+
+	# Harden the host
+	(cd hardening && sudo -E bash ubuntu.sh)
+	
+	# Run security initial assessment
+	(cd hardening/tests/ && sudo bats . > ../bats-results2.log)
+	apt-get install -y git
+	SEOF
+
+	cat <<- 'SEOF' > system_03_mistborn.sh
+	#!/bin/bash
+	# shellcheck disable=SC1091
+	source "lib/functions.sh"
+
+	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
 	#----------------------------------------------------------------------------
 	log "Mistborn installation"
 	#----------------------------------------------------------------------------
-	# replace all instances of 10.2.3.1 with ${vpn_net}.1
-	# git clone https://gitlab.com/cyber5k/mistborn.git
-	# sudo -E bash ./mistborn/scripts/install.sh
-	# log "Watch the installation happens with:"
-	# echo "sudo journalctl -xfu Mistborn-base"
-	# log "Type the following to get the admin Wireguard profile:
-	# echo "sudo mistborn-cli getconf"
+	sudo -E bash ./mistborn/scripts/install.sh
+	log "Watch the installation happens with:"
+	echo "sudo journalctl -xfu Mistborn-base"
+	log "Type the following to get the admin Wireguard profile:"
+	echo "sudo mistborn-cli getconf"
 	SEOF
 
 	# Move the second step script to our media device
-	sudo chmod +x system_setup.sh
-	suds "mv system_setup.sh $cfg_droot_path/root/scadrial/"
+	sudo chmod +x system_01_finalize.sh system_02_harden.sh system_03_mistborn.sh
+	suds "mv system_01_finalize.sh system_02_harden.sh system_03_mistborn.sh $cfg_droot_path/home/$cfg_droot_user/scadrial"
 }
