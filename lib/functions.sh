@@ -124,24 +124,30 @@ media_reset() {
   done < <(df --output=target | grep "${cfg_droot_path}" | tac)
 }
 
-open_luks() {
-	log "Ensure luks volume unlocked"
-	if [ "$(sudo blkid | grep -c /dev/mapper/crypt_root)" == 0 ]; then
-		echo "Luks Unlocked"
-		suds "echo -n ${1} | cryptsetup --key-file=- \
-			luksOpen ${cfg_device_name}2 ${cfg_device_luks}"
+get_pass() {
+	if [ -z "${passphrase:-}" ]; then
+		log "Passphrase/password Setup"
+		# shellcheck disable=SC2162
+		read -p "Specify the default password: " -s passphrase
+		# passphrase=123456
+		echo
 	fi
 }
 
-media_mount() {
-	if [ -z "${passphrase:-}" ]; then
-		log "Enter passphrase:"
-		read -rs passphrase
-		# passphrase=123456
-	fi
+open_luks() {
+	log "Unlock luks volume"
+	if [ "$(sudo blkid | grep -c /dev/mapper/crypt_root)" == 0 ]; then
+		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_device_name}2 ${cfg_device_luks}"; then
+			err "Luks Unlock Failed"
+		else
+			echo "Luks Unlocked"
+		fi
+	fi 
+}
 
-	# shellcheck disable=SC2086
-	open_luks $passphrase
+media_mount() {
+	get_pass
+	open_luks "$passphrase"
 
     log "Mount the partitions"
     #----------------------------------------------------------------------------
@@ -167,17 +173,14 @@ media_setup() {
 	# Function configure the specified media per the config.yaml
 	# Includes partitioning, encryption, mounting, etc.
     #----------------------------------------------------------------------------
-
-	log "Enter passphrase:"
-	read -rs passphrase
-	# passphrase=123456
+	get_pass
 
     #----------------------------------------------------------------------------
     log "Generate ssh key pair on the client (i.e. laptop)"
     #----------------------------------------------------------------------------
     echo -n "$passphrase" | ssh-keygen -o -a 256 -t ed25519 \
-        -f "$HOME/.ssh/id_ed25519_${cfg_droot_host}" \
-        -C "${cfg_droot_user}@${cfg_droot_host}-$(date -I)"
+         -f "$HOME/.ssh/id_ed25519_${cfg_droot_host}" \
+         -C "${cfg_droot_user}@${cfg_droot_host}-$(date -I)"
     eval "$(ssh-agent -s)"
     ssh-add "$HOME/.ssh/id_ed25519_${cfg_droot_host}"
 
@@ -209,15 +212,17 @@ media_setup() {
     suds "wipefs -af ${cfg_device_name}1"
     suds "wipefs -af ${cfg_device_name}2"
 
-    log "Setup encryption"
     #----------------------------------------------------------------------------
-    suds "echo -n $passphrase | cryptsetup -v --iter-time 5000 --type luks2 \
-        --hash sha512 --use-random luksFormat --key-file=- ${cfg_device_name}2"
+    log "Setup encryption"
+	# Escape any dollar signs in the password
+    suds "echo -n ${passphrase//$/\\$} | cryptsetup -q -v --iter-time 5000 --type luks2 \
+        --hash sha512 --use-random luksFormat ${cfg_device_name}2 -"
+	
 	# shellcheck disable=SC2086
     open_luks $passphrase
 
-    log "Create filesystems"
     #----------------------------------------------------------------------------
+    log "Create filesystems"
     suds "mkfs.vfat -vF32 ${cfg_device_name}1"
     suds "mkfs.btrfs -L crypt_root /dev/mapper/${cfg_device_luks}"
 
@@ -241,7 +246,6 @@ media_setup() {
     #----------------------------------------------------------------------------
     suds "debootstrap --arch amd64 $cfg_dist_name $cfg_droot_path" http://archive.ubuntu.com/ubuntu
     for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_droot_path/$b"; done
-
 }
 
 system_setup() {
@@ -252,6 +256,7 @@ system_setup() {
 	suds "cp -r     $cfg_droot_path/etc/skel $cfg_droot_path/home/$cfg_droot_user"
 	suds "mkdir -p  $cfg_droot_path/home/$cfg_droot_user/scadrial"
 	suds "cp -r ./* $cfg_droot_path/home/$cfg_droot_user/scadrial/"
+	suds "chown -R  $cfg_droot_user:$cfg_droot_user $cfg_droot_path/home/$cfg_droot_user/"
 
 	cat <<- 'SEOF' > system_01_finalize.sh
 	#!/bin/bash
@@ -264,14 +269,16 @@ system_setup() {
 
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
+	get_pass
+	
 	#----------------------------------------------------------------------------
 	log "Setup environment, user and access"
 	#----------------------------------------------------------------------------
 	useradd -M -s /bin/bash "$cfg_droot_user"
-	passwd "$cfg_droot_user"
+	echo "${cfg_droot_user}:${passphrase}" | chpasswd
 	usermod -a -G sudo "$cfg_droot_user"
 
-	suds "chown -R $cfg_droot_user:$cfg_droot_user /home/scadrial"
+	suds "chown -R $cfg_droot_user:$cfg_droot_user /home/${cfg_droot_user}/scadrial"
 
 	sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
@@ -308,15 +315,19 @@ system_setup() {
 
 	cat <<- EOF | tee /etc/fstab
 	UUID=$croot  /                     btrfs   rw,${cfg_device_optn},subvol=@                           0 0
-	UUID=$croot  /boot                 btrfs   rw,${cfg_device_optn},subvol=@boot                       0 0
-	UUID=$eboot                                   /boot/efi       vfat    rw,umask=0077                                           0 1
+	UUID=$croot  /boot                 btrfs   rw,${cfg_device_optn},subvol=@boot,nosuid,nodev          0 0
+	UUID=$eboot                             /boot/efi             vfat    rw,umask=0077                                           0 1
 	UUID=$croot  /home                 btrfs   rw,${cfg_device_optn},subvol=@home,nosuid,nodev          0 0
 	UUID=$croot  /opt/mistborn_volumes btrfs   rw,${cfg_device_optn},subvol=@data,nosuid,nodev,noexec   0 0
 	UUID=$croot  /var                  btrfs   rw,${cfg_device_optn},subvol=@var                        0 0
 	UUID=$croot  /var/log              btrfs   rw,${cfg_device_optn},subvol=@log,nosuid,nodev,noexec    0 0
 	UUID=$croot  /var/log/audit        btrfs   rw,${cfg_device_optn},subvol=@audit,nosuid,nodev,noexec  0 0
 	UUID=$croot  /var/tmp              btrfs   rw,${cfg_device_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
-	tmpfs                                           /tmp            tmpfs   rw,nosuid,nodev,noexec
+	tmpfs                                      /tmp                  tmpfs   rw,noexec,nosuid,nodev                     0 0
+	none                                       /run/shm              tmpfs   rw,noexec,nosuid,nodev                     0 0
+	none                                       /dev/shm              tmpfs   rw,noexec,nosuid,nodev                     0 0
+	none                                       /proc                 proc    rw,nosuid,nodev,noexec,relatime,hidepid=2  0 0
+
 	# Swap in zram (adjust for your needs)
 	# /dev/zram0        none    swap    defaults      0 0
 	EOF
@@ -381,7 +392,7 @@ system_setup() {
 	echo "Exit chroot and umount our media, as follows:"
 	#----------------------------------------------------------------------------
 	echo "exit"
-	echo "./scadrial-setup.sh unmount"
+	echo "sudo ./scadrial-setup.sh unmount"
 
 	#----------------------------------------------------------------------------
 	log "After booting into our new host, login as 'mistborn' user and run the following:"
