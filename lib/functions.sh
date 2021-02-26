@@ -256,7 +256,6 @@ system_setup() {
 	suds "cp -r     $cfg_droot_path/etc/skel $cfg_droot_path/home/$cfg_droot_user"
 	suds "mkdir -p  $cfg_droot_path/home/$cfg_droot_user/scadrial"
 	suds "cp -r ./* $cfg_droot_path/home/$cfg_droot_user/scadrial/"
-	suds "chown -R  $cfg_droot_user:$cfg_droot_user $cfg_droot_path/home/$cfg_droot_user/"
 
 	cat <<- 'SEOF' > system_01_finalize.sh
 	#!/bin/bash
@@ -277,8 +276,6 @@ system_setup() {
 	useradd -M -s /bin/bash "$cfg_droot_user"
 	echo "${cfg_droot_user}:${passphrase}" | chpasswd
 	usermod -a -G sudo "$cfg_droot_user"
-
-	suds "chown -R $cfg_droot_user:$cfg_droot_user /home/${cfg_droot_user}/scadrial"
 
 	sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
@@ -342,8 +339,8 @@ system_setup() {
 
 	kernel="linux-image-generic-hwe-${cfg_dist_vers}"
 
-	apt-get install -y "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils \
-	gdisk btrfs-progs debootstrap parted net-tools ca-certificates iproute2 fwupd iptables --no-install-recommends
+	apt-get install -y "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils lvm2 iw \
+	hostapd gdisk btrfs-progs debootstrap parted net-tools ca-certificates iproute2 fwupd iptables --no-install-recommends
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
@@ -352,7 +349,6 @@ system_setup() {
 
 	mkdir -p /home/${cfg_droot_user}/.ssh && touch /home/${cfg_droot_user}/.ssh/authorized_keys
 	chmod 700 /home/${cfg_droot_user}/.ssh && chmod 600 /home/${cfg_droot_user}/.ssh/authorized_keys
-	chown -R $cfg_droot_user:$cfg_droot_user /home/${cfg_droot_user}/.ssh/
 
 	#----------------------------------------------------------------------------
 	log "Setup systemd-boot files"
@@ -386,6 +382,8 @@ system_setup() {
 	git clone https://github.com/konstruktoid/hardening.git
 	git clone https://gitlab.com/cyber5k/mistborn.git
 	sed -i "s|cp ./config/tmp.mount|#cp ./config/tmp.mount|g" ./hardening/scripts/08_fstab
+
+	suds "chown -R $cfg_droot_user:$cfg_droot_user /home/$cfg_droot_user"
 
 	#----------------------------------------------------------------------------
 	log "The initial media configuration complete. Pending steps to complete on the host."
