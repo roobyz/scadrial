@@ -284,44 +284,6 @@ system_setup() {
 	ln -sf /usr/share/zoneinfo/${cfg_droot_tzne} /etc/localtime
 	locale-gen en_US.UTF-8
 
-	cat <<- EOF > /etc/netplan/01-netcfg.yaml
-	# This file describes the network interfaces available on your system
-	# For more information, see netplan(5).
-	network:
-	  version: 2
-	  renderer: networkd
-      ethernets:
-        ${cfg_netplan_wan_ndev}:
-          dhcp4: yes
-          dhcp6: no
-        ${cfg_netplan_lan_ndev}:
-          dhcp4: no
-          dhcp6: no
-	      optional: true
-        ${cfg_netplan_wifi_ndev}:
-          dhcp4: no
-          dhcp6: no
-	      optional: true
-      bridges:
-        ${cfg_netplan_bridge_name}:
-          dhcp4: no
-          dhcp6: no
-          gateway4: ${cfg_netplan_bridge_gate}
-          addresses: ${cfg_netplan_bridge_addrs}
-          interfaces:
-            - ${cfg_netplan_lan_ndev}
-            - ${cfg_netplan_wifi_ndev}
-          parameters:
-            forward-delay: 0
-            stp: true
-          nameservers:
-	        search: [marsh.home]
-            addresses: ${cfg_netplan_bridge_nmsrv}
-	EOF
-
-	sudo netplan generate
-	sudo netplan apply
-	
 	#----------------------------------------------------------------------------
 	log "Configure partion files"
 	#----------------------------------------------------------------------------
@@ -351,6 +313,62 @@ system_setup() {
 
 	# Swap in zram (adjust for your needs)
 	# /dev/zram0        none    swap    defaults      0 0
+	EOF
+
+	#----------------------------------------------------------------------------
+	log "Setup networking files"
+	#----------------------------------------------------------------------------
+	cat <<- EOF > /etc/netplan/01-netcfg.yaml
+	# This file describes the network interfaces available on your system
+	# For more information, see netplan(5).
+	network:
+	  version: 2
+	  renderer: networkd
+	  ethernets:
+	    ${cfg_netplan_wan_ndev}:
+	      dhcp4: yes
+	      dhcp6: no
+	    ${cfg_netplan_lan_ndev}:
+	      dhcp4: no
+	      dhcp6: no
+	      gateway4: ${cfg_netplan_lan_gate}
+	      addresses: ${cfg_netplan_lan_addrs}
+	      nameservers:
+	        addresses: ${cfg_netplan_lan_nmsrv}
+	    ${cfg_netplan_wifi_ndev}:
+	      dhcp4: no
+	      dhcp6: no
+	      gateway4: ${cfg_netplan_wifi_gate}
+	      addresses: ${cfg_netplan_wifi_addrs}
+	      nameservers:
+	        addresses: ${cfg_netplan_wifi_nmsrv}
+	EOF
+
+	sudo netplan generate
+	sudo netplan apply
+	
+	cat <<- EOF > /usr/local/bin/bridge2tunnel.sh
+	#!/bin/bash
+
+	iptables -A FORWARD -i ${cfg_netplan_lan_ndev} -o wg0 -j ACCEPT
+	iptables -A FORWARD -i wg0 -o ${cfg_netplan_lan_ndev} -m state --state RELATED,ESTABLISHED -j ACCEPT
+	iptables -t nat -A  POSTROUTING -o wg0 -j MASQUERADE
+
+	iptables -A FORWARD -i ${cfg_netplan_wifi_ndev} -o wg0 -j ACCEPT
+	iptables -A FORWARD -i wg0 -o ${cfg_netplan_wifi_ndev} -m state --state RELATED,ESTABLISHED -j ACCEPT
+	iptables -t nat -A  POSTROUTING -o wg0 -j MASQUERADE
+	EOF
+
+	cat <<- EOF > /etc/systemd/system/bridge2tunnel.service
+	[Unit]
+	Description=Bridge to Tunnel
+
+	[Service]
+	Type=oneshot
+	ExecStart=/bin/bash /usr/local/bin/bridge2tunnel.sh
+
+	[Install]
+	WantedBy=multi-user.target
 	EOF
 
 	#----------------------------------------------------------------------------
@@ -468,6 +486,8 @@ system_setup() {
 	log "Mistborn installation"
 	#----------------------------------------------------------------------------
 	sudo -E bash ./mistborn/scripts/install.sh
+	systemctl enable bridge2tunnel
+
 	log "Watch the installation happens with:"
 	echo "sudo journalctl -xfu Mistborn-base"
 	log "Type the following to get the admin Wireguard profile:"
