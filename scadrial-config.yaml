@@ -16,7 +16,24 @@ droot:
   user: mistborn
   host: scadrial
   tzne: America/Los_Angeles
-  # https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-consistent_network_device_naming
-  # https://ubuntu.com/blog/ubuntu-bionic-netplan
-  ndev: eno1
   addr: 172.26.75.103
+# Parameters for netplan configuration
+# https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-consistent_network_device_naming
+# https://ubuntu.com/blog/ubuntu-bionic-netplan
+netplan:
+  wan:
+    # Use dhcp to get upstream IP address
+    ndev: eno1
+    dhcp4: yes
+    dhcp6: no
+  lan:
+    ndev: enp4s0
+  wifi:
+    ndev: wlp2s0
+  # Configure the address for computers on internal network
+  # Ensure systemd-resolved is disabled?
+  bridge:
+    name: sbr0
+    gate: 10.13.36.1
+    addrs: [10.13.36.10/28]
+    nmsrv: 10.13.36.1

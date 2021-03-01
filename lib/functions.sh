@@ -6,7 +6,7 @@ echo "$cfg_device_name $cfg_device_pool $cfg_device_optn $cfg_device_luks" > /de
 
 # Config values for the new environment
 # shellcheck disable=SC2154
-echo "$cfg_droot_host $cfg_droot_addr $cfg_droot_user $cfg_droot_path $cfg_dist_name $cfg_dist_vers" > /dev/null
+echo "$cfg_droot_host $cfg_droot_user $cfg_droot_path $cfg_dist_name $cfg_dist_vers" > /dev/null
 
 shelp() {
     echo "
@@ -188,13 +188,13 @@ media_setup() {
     touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
     chmod 400 "$HOME/.ssh/id_ed25519_${cfg_droot_host}"
 
-    cat <<- EOF | tee ~/.ssh/config
-	Host $cfg_droot_host
-	HostName $cfg_droot_addr
-	User $cfg_droot_user
-	IdentityFile $HOME/.ssh/id_ed25519_${cfg_droot_host}
-	IdentitiesOnly yes
-	EOF
+    # cat <<- EOF | tee ~/.ssh/config
+	# Host $cfg_droot_host
+	# HostName $cfg_droot_addr
+	# User $cfg_droot_user
+	# IdentityFile $HOME/.ssh/id_ed25519_${cfg_droot_host}
+	# IdentitiesOnly yes
+	# EOF
 
     #----------------------------------------------------------------------------
     log "Setup storage media"
@@ -290,9 +290,33 @@ system_setup() {
 	network:
 	  version: 2
 	  renderer: networkd
-	  ethernets:
-	    ${cfg_droot_ndev}:
-	      dhcp4: yes
+      ethernets:
+        ${cfg_netplan_wan_ndev}:
+          dhcp4: yes
+          dhcp6: no
+        ${cfg_netplan_lan_ndev}:
+          dhcp4: no
+          dhcp6: no
+	      optional: true
+        ${cfg_netplan_wifi_ndev}:
+          dhcp4: no
+          dhcp6: no
+	      optional: true
+      bridges:
+        ${cfg_netplan_bridge_name}:
+          dhcp4: no
+          dhcp6: no
+          gateway4: ${cfg_netplan_bridge_gate}
+          addresses: ${cfg_netplan_bridge_addrs}
+          interfaces:
+            - ${cfg_netplan_lan_ndev}
+            - ${cfg_netplan_wifi_ndev}
+          parameters:
+            forward-delay: 0
+            stp: true
+          nameservers:
+	        search: [marsh.home]
+            addresses: ${cfg_netplan_bridge_nmsrv}
 	EOF
 
 	sudo netplan generate
@@ -339,8 +363,9 @@ system_setup() {
 
 	kernel="linux-image-generic-hwe-${cfg_dist_vers}"
 
-	apt-get install -y "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils lvm2 iw \
-	hostapd gdisk btrfs-progs debootstrap parted net-tools ca-certificates iproute2 fwupd iptables --no-install-recommends
+	apt-get install -y --no-install-recommends "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs \
+	git ssh pciutils lvm2 iw hostapd gdisk btrfs-progs debootstrap parted net-tools bridge-utils iproute2 fwupd iptables \
+	ca-certificates  
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
