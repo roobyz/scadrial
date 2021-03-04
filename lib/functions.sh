@@ -328,47 +328,41 @@ system_setup() {
 	    ${cfg_netplan_wan_ndev}:
 	      dhcp4: yes
 	      dhcp6: no
-	    ${cfg_netplan_lan_ndev}:
-	      dhcp4: no
-	      dhcp6: no
-	      gateway4: ${cfg_netplan_lan_gate}
-	      addresses: ${cfg_netplan_lan_addrs}
-	      nameservers:
-	        addresses: ${cfg_netplan_lan_nmsrv}
-	    ${cfg_netplan_wifi_ndev}:
-	      dhcp4: no
-	      dhcp6: no
-	      gateway4: ${cfg_netplan_wifi_gate}
-	      addresses: ${cfg_netplan_wifi_addrs}
-	      nameservers:
-	        addresses: ${cfg_netplan_wifi_nmsrv}
+	    # ${cfg_dnsmasq_lan_ndev}:
+	    #   dhcp4: no
+	    #   dhcp6: no
+	    #   gateway4: ${cfg_dnsmasq_lan_gate}
+	    #   addresses: ${cfg_dnsmasq_lan_addrs}
+	    #   nameservers:
+	    #     addresses: ${cfg_dnsmasq_lan_nmsrv}
+	    # ${cfg_dnsmasq_wifi_ndev}:
+	    #   dhcp4: no
+	    #   dhcp6: no
+	    #   gateway4: ${cfg_dnsmasq_wifi_gate}
+	    #   addresses: ${cfg_dnsmasq_wifi_addrs}
+	    #   nameservers:
+	    #     addresses: ${cfg_dnsmasq_wifi_nmsrv}
 	EOF
 
-	sudo netplan generate
-	sudo netplan apply
-	
-	cat <<- EOF > /usr/local/bin/bridge2tunnel.sh
-	#!/bin/bash
+	netplan generate
+	netplan apply
 
-	iptables -A FORWARD -i ${cfg_netplan_lan_ndev} -o wg0 -j ACCEPT
-	iptables -A FORWARD -i wg0 -o ${cfg_netplan_lan_ndev} -m state --state RELATED,ESTABLISHED -j ACCEPT
-	iptables -t nat -A  POSTROUTING -o wg0 -j MASQUERADE
+	mkdir -p /etc/dnsmasq.d
+	cat <<- EOF > /etc/dnsmasq.d/local-net.conf
+	# This file describes the local network dns available on your system
+	local-service    # only respond to locally connected networks
+	no-poll          # don't poll /etc/resolv.conf for changes
+	bogus-priv       # bogus private reverse lookups
+	domain-needed    # prevent forwarding invalid or specific DNS queries
+	bind-interfaces  # force dnsmasq to really bind only the interfaces it is listening on
 
-	iptables -A FORWARD -i ${cfg_netplan_wifi_ndev} -o wg0 -j ACCEPT
-	iptables -A FORWARD -i wg0 -o ${cfg_netplan_wifi_ndev} -m state --state RELATED,ESTABLISHED -j ACCEPT
-	iptables -t nat -A  POSTROUTING -o wg0 -j MASQUERADE
-	EOF
+	interface=${cfg_dnsmasq_lan_ndev}
+	interface=${cfg_dnsmasq_wifi_ndev}
+	except-interface=lo
+	except-interface=${cfg_netplan_wan_ndev}
 
-	cat <<- EOF > /etc/systemd/system/bridge2tunnel.service
-	[Unit]
-	Description=Bridge to Tunnel
-
-	[Service]
-	Type=oneshot
-	ExecStart=/bin/bash /usr/local/bin/bridge2tunnel.sh
-
-	[Install]
-	WantedBy=multi-user.target
+	dhcp-range=${cfg_dnsmasq_lan_ndev},${cfg_dnsmasq_lan_gate}0,${cfg_dnsmasq_lan_gate}9,255.255.255.0,12h
+	dhcp-range=${cfg_dnsmasq_wifi_ndev},${cfg_dnsmasq_wifi_gate}0,${cfg_dnsmasq_wifi_gate}9,255.255.255.0,12h
 	EOF
 
 	#----------------------------------------------------------------------------
@@ -387,11 +381,14 @@ system_setup() {
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
-	sed -i "/UMASK=0077/d" /etc/initramfs-tools/initramfs.conf
+	sed -i "|UMASK=0077|d" /etc/initramfs-tools/initramfs.conf
 	echo "UMASK=0077" >> /etc/initramfs-tools/initramfs.conf
 
 	mkdir -p /home/${cfg_droot_user}/.ssh && touch /home/${cfg_droot_user}/.ssh/authorized_keys
 	chmod 700 /home/${cfg_droot_user}/.ssh && chmod 600 /home/${cfg_droot_user}/.ssh/authorized_keys
+
+	cp hostapd.conf /etc/hostapd/hostapd.conf
+	systemctl enable hostapd
 
 	#----------------------------------------------------------------------------
 	log "Setup systemd-boot files"
@@ -410,7 +407,7 @@ system_setup() {
 	options cryptdevice=PARTUUID=${pluks}:${cfg_device_luks}:allow-discards root=/dev/mapper/${cfg_device_luks} rootflags=subvol=@ rd.luks.options=discard rw
 	EOF
 
-	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
+	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s|vmlinuz-||)"
 	for FILE in config initrd.img System.map vmlinuz; do
 		cp "/boot/${FILE}-${LATEST}" "/boot/efi/ubuntu/${FILE}"
 	done
@@ -456,13 +453,13 @@ system_setup() {
 	(cd bats && ./install.sh /usr/local)
 
 	# Update our hardening configuration file
-	export vpn_net=10.$(dd if=/dev/urandom bs=2 count=1 2>/dev/null | od -An -tu1 | sed -e 's/^ *//' -e 's/  */./g')
+	export vpn_net=10.$(dd if=/dev/urandom bs=2 count=1 2>/dev/null | od -An -tu1 | sed -e 's|^ *||' -e 's|  *|.|g')
 	export vpn_prt=$(echo $(od -An -N2 -i < /dev/urandom)  | xargs)
 	(cd hardening && \
-	sed -i "s/FW_ADMIN='127.0.0.1'/FW_ADMIN='${vpn_net}.0\/24'/g" ubuntu.cfg && \
-	sed -i "s/CHANGEME=''/CHANGEME='N'/g" ubuntu.cfg)
+	sed -i "s|FW_ADMIN='127.0.0.1'|FW_ADMIN='${vpn_net}.0/24'|g" ubuntu.cfg && \
+	sed -i "s|CHANGEME=''|CHANGEME='N'|g" ubuntu.cfg)
 	# replace all instances of Mistborn 10.2.3.1 with ${vpn_net}.1
-	sed -i "s/10.2.3.1/${vpn_net}.1/g" ./mistborn/scripts/install.sh
+	sed -i "s|10.2.3.1|${vpn_net}.1|g" ./mistborn/scripts/install.sh
 
 	# Run security initial assessment
 	(cd hardening/tests/ && sudo bats . > ../bats-results1.log)
@@ -486,6 +483,37 @@ system_setup() {
 	log "Mistborn installation"
 	#----------------------------------------------------------------------------
 	sudo -E bash ./mistborn/scripts/install.sh
+
+	sed -i "|conf-dir=/etc/dnsmasq.d/,*.conf|d" /etc/dnsmasq.conf
+	echo "conf-dir=/etc/dnsmasq.d/,*.conf" >> /etc/dnsmasq.conf
+
+	log "Forward local network traffic to wireguard tunnel"
+	wgdev="$(cd /etc/wireguard && ls -1t *.conf | sed s/.conf//)"
+
+	cat <<- EOF > /usr/local/bin/bridge2tunnel.sh
+	#!/bin/bash
+
+	iptables -A FORWARD -i ${cfg_dnsmasq_lan_ndev} -o ${wgdev} -j ACCEPT
+	iptables -A FORWARD -i ${wgdev} -o ${cfg_dnsmasq_lan_ndev} -m state --state RELATED,ESTABLISHED -j ACCEPT
+	iptables -t nat -A  POSTROUTING -o ${wgdev} -j MASQUERADE
+
+	iptables -A FORWARD -i ${cfg_dnsmasq_wifi_ndev} -o ${wgdev} -j ACCEPT
+	iptables -A FORWARD -i ${wgdev} -o ${cfg_dnsmasq_wifi_ndev} -m state --state RELATED,ESTABLISHED -j ACCEPT
+	iptables -t nat -A  POSTROUTING -o ${wgdev} -j MASQUERADE
+	EOF
+
+	cat <<- EOF > /etc/systemd/system/bridge2tunnel.service
+	[Unit]
+	Description=Bridge to Tunnel
+
+	[Service]
+	Type=oneshot
+	ExecStart=/bin/bash /usr/local/bin/bridge2tunnel.sh
+
+	[Install]
+	WantedBy=multi-user.target
+	EOF
+
 	systemctl enable bridge2tunnel
 
 	log "Watch the installation happens with:"

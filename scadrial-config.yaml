@@ -27,6 +27,7 @@ netplan:
     ndev: eno1
     dhcp4: yes
     dhcp6: no
+dnsmasq:
   # local-area network
   lan:
     ndev: enp4s0
