@@ -55,6 +55,21 @@ suds() {
   sudo bash -c "${1}"
 }
 
+set_sudoer() {
+	case $(sudo grep -e "^${1}.*" /etc/sudoers >/dev/null; echo $?) in
+	0)
+		echo "${1} already in sudoers"
+		;;
+	1)
+		echo "Adding ${1} to sudoers"
+		sudo bash -c "echo '${1}  ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers"
+		;;
+	*)
+		echo "There was a problem checking sudoers"
+		;;
+	esac
+}
+
 # shellcheck disable=SC1003
 # Based on https://gist.github.com/pkuczynski/8665367
 parse_yaml() {
@@ -190,7 +205,7 @@ media_setup() {
 
     # cat <<- EOF | tee ~/.ssh/config
 	# Host $cfg_droot_host
-	# HostName $cfg_droot_addr
+	# HostName ${cfg_network_wan_haddr}
 	# User $cfg_droot_user
 	# IdentityFile $HOME/.ssh/id_ed25519_${cfg_droot_host}
 	# IdentitiesOnly yes
@@ -248,16 +263,15 @@ media_setup() {
     for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_droot_path/$b"; done
 }
 
-system_setup() {
+script_setup() {
 	#----------------------------------------------------------------------------
-    log "Generate final system script."
+    log "Generate final system scripts."
 	#----------------------------------------------------------------------------
-	suds "mkdir -p  $cfg_droot_path/home"
-	suds "cp -r     $cfg_droot_path/etc/skel $cfg_droot_path/home/$cfg_droot_user"
 	suds "mkdir -p  $cfg_droot_path/home/$cfg_droot_user/scadrial"
 	suds "cp -r ./* $cfg_droot_path/home/$cfg_droot_user/scadrial/"
+	suds "cp $cfg_droot_path/etc/skel/.* $cfg_droot_path/home/$cfg_droot_user/ 2> /dev/null"
 
-	cat <<- 'SEOF' > system_01_finalize.sh
+	cat <<- 'SEOF' > scadrial-finalize.sh
 	#!/bin/bash
 
 	#----------------------------------------------------------------------------
@@ -275,8 +289,8 @@ system_setup() {
 	#----------------------------------------------------------------------------
 	useradd -M -s /bin/bash "$cfg_droot_user"
 	echo "${cfg_droot_user}:${passphrase}" | chpasswd
-	usermod -a -G sudo "$cfg_droot_user"
-
+	set_sudoer "$cfg_droot_user"
+	
 	sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	echo "$cfg_droot_host" > /etc/hostname
@@ -288,6 +302,7 @@ system_setup() {
 	log "Configure partion files"
 	#----------------------------------------------------------------------------
 	pluks="$(blkid -s PARTUUID -o value ${cfg_device_name}2)"
+
 	# Setup the device UUID that contains our luks volume
 	echo "# <target name>	<source device>		<key file>	<options>" > /etc/crypttab
 	echo "$cfg_device_luks PARTUUID=$pluks none luks,discard" >> /etc/crypttab
@@ -316,56 +331,6 @@ system_setup() {
 	EOF
 
 	#----------------------------------------------------------------------------
-	log "Setup networking files"
-	#----------------------------------------------------------------------------
-	cat <<- EOF > /etc/netplan/01-netcfg.yaml
-	# This file describes the network interfaces available on your system
-	# For more information, see netplan(5).
-	network:
-	  version: 2
-	  renderer: networkd
-	  ethernets:
-	    ${cfg_netplan_wan_ndev}:
-	      dhcp4: yes
-	      dhcp6: no
-	    # ${cfg_dnsmasq_lan_ndev}:
-	    #   dhcp4: no
-	    #   dhcp6: no
-	    #   gateway4: ${cfg_dnsmasq_lan_gate}
-	    #   addresses: ${cfg_dnsmasq_lan_addrs}
-	    #   nameservers:
-	    #     addresses: ${cfg_dnsmasq_lan_nmsrv}
-	    # ${cfg_dnsmasq_wifi_ndev}:
-	    #   dhcp4: no
-	    #   dhcp6: no
-	    #   gateway4: ${cfg_dnsmasq_wifi_gate}
-	    #   addresses: ${cfg_dnsmasq_wifi_addrs}
-	    #   nameservers:
-	    #     addresses: ${cfg_dnsmasq_wifi_nmsrv}
-	EOF
-
-	netplan generate
-	netplan apply
-
-	mkdir -p /etc/dnsmasq.d
-	cat <<- EOF > /etc/dnsmasq.d/local-net.conf
-	# This file describes the local network dns available on your system
-	local-service    # only respond to locally connected networks
-	no-poll          # don't poll /etc/resolv.conf for changes
-	bogus-priv       # bogus private reverse lookups
-	domain-needed    # prevent forwarding invalid or specific DNS queries
-	bind-interfaces  # force dnsmasq to really bind only the interfaces it is listening on
-
-	interface=${cfg_dnsmasq_lan_ndev}
-	interface=${cfg_dnsmasq_wifi_ndev}
-	except-interface=lo
-	except-interface=${cfg_netplan_wan_ndev}
-
-	dhcp-range=${cfg_dnsmasq_lan_ndev},${cfg_dnsmasq_lan_gate}0,${cfg_dnsmasq_lan_gate}9,255.255.255.0,12h
-	dhcp-range=${cfg_dnsmasq_wifi_ndev},${cfg_dnsmasq_wifi_gate}0,${cfg_dnsmasq_wifi_gate}9,255.255.255.0,12h
-	EOF
-
-	#----------------------------------------------------------------------------
 	log "Install applications and kernel"
 	#----------------------------------------------------------------------------
 	echo "deb http://archive.ubuntu.com/ubuntu focal main universe" > /etc/apt/sources.list
@@ -377,18 +342,15 @@ system_setup() {
 
 	apt-get install -y --no-install-recommends "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs \
 	git ssh pciutils lvm2 iw hostapd gdisk btrfs-progs debootstrap parted net-tools bridge-utils iproute2 fwupd iptables \
-	ca-certificates  
+	ca-certificates isc-dhcp-server
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
-	sed -i "|UMASK=0077|d" /etc/initramfs-tools/initramfs.conf
+	sed -i "/UMASK=0077/d" /etc/initramfs-tools/initramfs.conf
 	echo "UMASK=0077" >> /etc/initramfs-tools/initramfs.conf
 
 	mkdir -p /home/${cfg_droot_user}/.ssh && touch /home/${cfg_droot_user}/.ssh/authorized_keys
 	chmod 700 /home/${cfg_droot_user}/.ssh && chmod 600 /home/${cfg_droot_user}/.ssh/authorized_keys
-
-	cp hostapd.conf /etc/hostapd/hostapd.conf
-	systemctl enable hostapd
 
 	#----------------------------------------------------------------------------
 	log "Setup systemd-boot files"
@@ -407,7 +369,7 @@ system_setup() {
 	options cryptdevice=PARTUUID=${pluks}:${cfg_device_luks}:allow-discards root=/dev/mapper/${cfg_device_luks} rootflags=subvol=@ rd.luks.options=discard rw
 	EOF
 
-	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s|vmlinuz-||)"
+	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
 	for FILE in config initrd.img System.map vmlinuz; do
 		cp "/boot/${FILE}-${LATEST}" "/boot/efi/ubuntu/${FILE}"
 	done
@@ -423,8 +385,6 @@ system_setup() {
 	git clone https://gitlab.com/cyber5k/mistborn.git
 	sed -i "s|cp ./config/tmp.mount|#cp ./config/tmp.mount|g" ./hardening/scripts/08_fstab
 
-	suds "chown -R $cfg_droot_user:$cfg_droot_user /home/$cfg_droot_user"
-
 	#----------------------------------------------------------------------------
 	log "The initial media configuration complete. Pending steps to complete on the host."
 	echo "Exit chroot and umount our media, as follows:"
@@ -436,15 +396,200 @@ system_setup() {
 	log "After booting into our new host, login as 'mistborn' user and run the following:"
 	#----------------------------------------------------------------------------
 	echo "cd scadrial"
-	echo "sudo ./system_02_harden.sh"
-	echo "sudo ./system_03_mistborn.sh"
+	echo "sudo ./system_01_networking.sh"
+	echo "sudo ./system_02_mistborn.sh"
+	echo "sudo ./system_03_routing.sh"
+	echo "Still work in progress..."
+	echo "sudo ./system_04_hardening.sh"
 	SEOF
 
-	cat <<- 'SEOF' > system_02_harden.sh
+	cat <<- 'SEOF' > system_01_networking.sh
 	#!/bin/bash
-	# shellcheck disable=SC1091
+
 	source "lib/functions.sh"
 
+	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
+
+	#----------------------------------------------------------------------------
+	log "Setup networking..."
+	#----------------------------------------------------------------------------
+
+	#----------------------------------------------------------------------------
+	echo "Enable routing"
+	#----------------------------------------------------------------------------
+	# Ensure your computer knows it is supposed to be a router,
+	sed -i 's/.*net.ipv4.ip_forward.*/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+	sysctl -p
+
+	#----------------------------------------------------------------------------
+	echo "Set initial firewall policy, rules, and NAT"
+	#----------------------------------------------------------------------------
+	# Start from a blank slate. Flush all iptables rules
+	iptables -F
+	iptables -X
+	iptables -Z
+
+	# Set default iptables Chain Policy to drop
+	iptables -P INPUT DROP
+	iptables -P FORWARD DROP
+	iptables -P OUTPUT ACCEPT
+
+	# Accept incoming packets from localhost and local interfaces.
+	iptables -A INPUT -i lo  -j ACCEPT
+	iptables -A INPUT -i lan -j ACCEPT
+	iptables -A INPUT -i wap -j ACCEPT
+
+	# Accept incoming packets from the WAN if the router initiated the connection.
+	iptables -A INPUT -i wan -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+	# Accept forwarded packets from local interfaces to the WAN.
+	iptables -A FORWARD -i lan -o wan -j ACCEPT
+	iptables -A FORWARD -i wap -o wan -j ACCEPT
+
+	# Accept forwarded packets from WAN to local interfaces that initiated a connection.
+	iptables -A FORWARD -i wan -o lan -m state --state ESTABLISHED,RELATED -j ACCEPT
+	iptables -A FORWARD -i wan -o wap -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+	# Enable masquerading (NAT) for traffic going out to WAN
+	iptables -t nat -A POSTROUTING -o wan -j MASQUERADE
+	
+	#----------------------------------------------------------------------------
+	echo "Setup networking interfaces"
+	#----------------------------------------------------------------------------
+	# Indentify interface hw addresses
+	WAN_MAC=$(networkctl status ${cfg_network_wan_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+	LAN_MAC=$(networkctl status ${cfg_network_lan_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+	WAP_MAC=$(networkctl status ${cfg_network_wap_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+
+	# Configure interfaces
+	cat <<- EOF > /etc/netplan/01-netcfg.yaml
+	# This file describes the network interfaces available on your system
+	# For more information, see netplan(5).
+	network:
+	  version: 2
+	  renderer: networkd
+	  ethernets:
+	    wan:
+	      dhcp4: ${cfg_network_wan_dhcp4}
+	      match:
+	        macaddress: ${WAN_MAC}
+	      set-name: wan
+	    lan:
+	      dhcp4: no
+	      dhcp6: no
+	      match:
+	        macaddress: ${LAN_MAC}
+	      set-name: lan
+	      # Prevent waiting for interface
+	      optional: yes
+	      addresses: [${cfg_network_lan_addrs}]
+	      nameservers:
+	        addresses: [${cfg_network_wan_gate4}]
+	    wap:
+	      dhcp4: no
+	      dhcp6: no
+	      match:
+	        macaddress: ${WAP_MAC}
+	      set-name: wap
+	      # Prevent waiting for interface
+	      optional: yes
+	      addresses: [${cfg_network_wifi_addrs}]
+	      nameservers:
+	        addresses: [${cfg_network_wan_gate4}]
+	EOF
+
+	netplan apply
+
+	# NOTE: local networks should be up even if there is no carrier (aka: no client connected). This will
+	# enable the DHCP server to always be running and serve IP addresses the moment you connect a client. 
+	for FILE in lan wap; do
+		cp "/run/systemd/network/10-netplan-${FILE}.network" "/etc/systemd/network/10-netplan-${FILE}.network"
+		echo "ConfigureWithoutCarrier=yes" >> "10-netplan-${FILE}.network"
+	done
+
+	#----------------------------------------------------------------------------
+	echo "Setup dhcp for local interfaces"
+	#----------------------------------------------------------------------------
+	# Configure the dhcp server settings for local connections.
+	sed -i "s/.*INTERFACESv4.*/INTERFACESv4=\"lan wap\"/" /etc/default/isc-dhcp-server
+	
+	cat <<- EOF > /etc/dhcp/dhcpd.conf
+	default-lease-time 600;
+	max-lease-time 7200;
+	authoritative;
+
+	option subnet-mask 255.255.255.0;
+	option routers ${cfg_network_wan_gate4};
+	option domain-name-servers ${cfg_network_wan_gate4};
+	option domain-name "${cfg_droot_host}";
+
+	subnet ${cfg_network_lan_addrs%.*}.0 netmask 255.255.255.0 {
+	  range ${cfg_network_lan_addrs%.*}.10 ${cfg_network_lan_addrs%.*}.25;
+	  option broadcast-address ${cfg_network_lan_addrs%.*}.255;
+	}
+
+	subnet ${cfg_network_wifi_addrs%.*}.0 netmask 255.255.255.0 {
+	  range ${cfg_network_wifi_addrs%.*}.10 ${cfg_network_wifi_addrs%.*}.25;
+	  option broadcast-address ${cfg_network_wifi_addrs%.*}.255;
+	}
+	EOF
+
+	#----------------------------------------------------------------------------
+	echo "Setup wireless access point"
+	#----------------------------------------------------------------------------
+	cp hostapd.conf /etc/hostapd/hostapd.conf
+
+	sed -i 's/.*Restart.*/Restart=always/' /lib/systemd/system/hostapd.service
+	sed -i 's/.*RestartSec.*/RestartSec=5/' /lib/systemd/system/hostapd.service
+
+	systemctl enable hostapd
+
+	# netstat -rn
+	# networkctl -a status
+	SEOF
+
+	cat <<- 'SEOF' > system_02_mistborn.sh
+	#!/bin/bash
+	source "lib/functions.sh"
+	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
+
+	#----------------------------------------------------------------------------
+	log "Install Mistborn..."
+	#----------------------------------------------------------------------------
+	sudo -E bash ./mistborn/scripts/install.sh
+
+	log "Watch the installation happens with:"
+	echo "sudo journalctl -xfu Mistborn-base"
+
+	log "Type the following to get the admin Wireguard profile:"
+	echo "sudo mistborn-cli getconf"
+
+	log "After the admin Wireguard profile is ready, run:"
+	echo "sudo system_02b_mistborn.sh"
+	SEOF
+
+	cat <<- 'SEOF' > system_03_routing.sh
+	#!/bin/bash
+	source "lib/functions.sh"
+	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
+
+	#----------------------------------------------------------------------------
+	log "Update iptables to forward local network traffic to wireguard tunnel"
+	#----------------------------------------------------------------------------
+	EXTIF=LAN
+	INTIF="$(cd /etc/wireguard && ls -1t *.conf | sed s/.conf//)"
+
+	iptables -A MISTBORN_FORWARD_${INTIF} -i $EXTIF -o $INTIF -m state --state ESTABLISHED,RELATED -j ACCEPT
+	iptables -A MISTBORN_FORWARD_${INTIF} -i $INTIF -o $EXTIF -j ACCEPT
+	iptables -t nat -A POSTROUTING -o $EXTIF -j MASQUERADE
+
+	echo "Saving iptables rules"
+	sudo bash -c "iptables-save > /etc/iptables/rules.v4"
+	SEOF
+
+	cat <<- 'SEOF' > system_04_hardening.sh
+	#!/bin/bash
+	source "lib/functions.sh"
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
 	#----------------------------------------------------------------------------
@@ -472,57 +617,8 @@ system_setup() {
 	apt-get install -y git
 	SEOF
 
-	cat <<- 'SEOF' > system_03_mistborn.sh
-	#!/bin/bash
-	# shellcheck disable=SC1091
-	source "lib/functions.sh"
-
-	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
-
-	#----------------------------------------------------------------------------
-	log "Mistborn installation"
-	#----------------------------------------------------------------------------
-	sudo -E bash ./mistborn/scripts/install.sh
-
-	sed -i "|conf-dir=/etc/dnsmasq.d/,*.conf|d" /etc/dnsmasq.conf
-	echo "conf-dir=/etc/dnsmasq.d/,*.conf" >> /etc/dnsmasq.conf
-
-	log "Forward local network traffic to wireguard tunnel"
-	wgdev="$(cd /etc/wireguard && ls -1t *.conf | sed s/.conf//)"
-
-	cat <<- EOF > /usr/local/bin/bridge2tunnel.sh
-	#!/bin/bash
-
-	iptables -A FORWARD -i ${cfg_dnsmasq_lan_ndev} -o ${wgdev} -j ACCEPT
-	iptables -A FORWARD -i ${wgdev} -o ${cfg_dnsmasq_lan_ndev} -m state --state RELATED,ESTABLISHED -j ACCEPT
-	iptables -t nat -A  POSTROUTING -o ${wgdev} -j MASQUERADE
-
-	iptables -A FORWARD -i ${cfg_dnsmasq_wifi_ndev} -o ${wgdev} -j ACCEPT
-	iptables -A FORWARD -i ${wgdev} -o ${cfg_dnsmasq_wifi_ndev} -m state --state RELATED,ESTABLISHED -j ACCEPT
-	iptables -t nat -A  POSTROUTING -o ${wgdev} -j MASQUERADE
-	EOF
-
-	cat <<- EOF > /etc/systemd/system/bridge2tunnel.service
-	[Unit]
-	Description=Bridge to Tunnel
-
-	[Service]
-	Type=oneshot
-	ExecStart=/bin/bash /usr/local/bin/bridge2tunnel.sh
-
-	[Install]
-	WantedBy=multi-user.target
-	EOF
-
-	systemctl enable bridge2tunnel
-
-	log "Watch the installation happens with:"
-	echo "sudo journalctl -xfu Mistborn-base"
-	log "Type the following to get the admin Wireguard profile:"
-	echo "sudo mistborn-cli getconf"
-	SEOF
-
 	# Move the second step script to our media device
-	sudo chmod +x system_01_finalize.sh system_02_harden.sh system_03_mistborn.sh
-	suds "mv system_01_finalize.sh system_02_harden.sh system_03_mistborn.sh $cfg_droot_path/home/$cfg_droot_user/scadrial"
+	sudo chmod +x scadrial-finalize.sh system_*.sh
+	suds "mv scadrial-finalize.sh system_*.sh $cfg_droot_path/home/$cfg_droot_user/scadrial"
+	suds "chown -R 1000:1000 $cfg_droot_path/home/$cfg_droot_user"
 }

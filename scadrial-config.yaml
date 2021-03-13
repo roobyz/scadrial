@@ -16,27 +16,22 @@ droot:
   user: mistborn
   host: scadrial
   tzne: America/Los_Angeles
-  addr: 172.26.75.103
 # Parameters for netplan configuration
 # https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-consistent_network_device_naming
 # https://ubuntu.com/blog/ubuntu-bionic-netplan
-netplan:
+network:
   # wide-area network
   wan:
-    # Use dhcp to get upstream IP address
-    ndev: eno1
+    iface: eno1
     dhcp4: yes
     dhcp6: no
-dnsmasq:
+    gate4: 172.26.75.1
+    haddr: 172.26.75.12
   # local-area network
   lan:
-    ndev: enp4s0
-    gate: 10.13.36.1
-    addrs: [10.13.36.10/28]
-    nmsrv: [10.13.36.1]
+    iface: enp4s0
+    addrs: 10.16.35.1/24
   # wireless network
-  wifi:
-    ndev: wlp2s0
-    gate: 10.13.38.1
-    addrs: [10.13.38.10/28]
-    nmsrv: [10.13.38.1]
+  wap:
+    iface: wlp2s0
+    addrs: 10.16.45.1/24

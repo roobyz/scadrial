@@ -1,4 +1,7 @@
 #!/bin/bash
+
+export DEBIAN_FRONTEND=noninteractive
+
 #############################################################################
 # Prepare the Install Media
 #----------------------------------------------------------------------------
@@ -72,11 +75,11 @@ while test $# -gt 0; do
     shift
 done
 
-system_setup
+script_setup
 
 #----------------------------------------------------------------------------
 log "Enter the new system and finalize our setup, by running the following:"
 #----------------------------------------------------------------------------
 echo "sudo chroot $cfg_droot_path /bin/bash"
 echo "cd /home/$cfg_droot_user/scadrial"
-echo "./system_01_finalize.sh"
+echo "./scadrial-finalize.sh"
