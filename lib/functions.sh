@@ -299,7 +299,7 @@ script_setup() {
 	locale-gen en_US.UTF-8
 
 	#----------------------------------------------------------------------------
-	log "Configure partion files"
+	log "Configure partitions"
 	#----------------------------------------------------------------------------
 	pluks="$(blkid -s PARTUUID -o value ${cfg_device_name}2)"
 
@@ -341,8 +341,8 @@ script_setup() {
 	kernel="linux-image-generic-hwe-${cfg_dist_vers}"
 
 	apt-get install -y --no-install-recommends "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs \
-	git ssh pciutils lvm2 iw hostapd gdisk btrfs-progs debootstrap parted net-tools bridge-utils iproute2 fwupd iptables \
-	ca-certificates isc-dhcp-server
+	git ssh pciutils lvm2 iw hostapd gdisk btrfs-progs debootstrap parted fwupd net-tools bridge-utils iproute2 iptables \
+	iptables-persistent ipset isc-dhcp-server ca-certificates
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
@@ -419,10 +419,10 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	# Ensure your computer knows it is supposed to be a router,
 	sed -i 's/.*net.ipv4.ip_forward.*/net.ipv4.ip_forward=1/' /etc/sysctl.conf
-	sysctl -p
+	sysctl -p /etc/sysctl.conf
 
 	#----------------------------------------------------------------------------
-	echo "Set initial firewall policy, rules, and NAT"
+	echo "Set initial firewall policy and ruleset, and enable NAT"
 	#----------------------------------------------------------------------------
 	# Start from a blank slate. Flush all iptables rules
 	iptables -F
@@ -430,6 +430,7 @@ script_setup() {
 	iptables -Z
 
 	# Set default iptables Chain Policy to drop
+	iptables -t nat -P PREROUTING ACCEPT
 	iptables -P INPUT DROP
 	iptables -P FORWARD DROP
 	iptables -P OUTPUT ACCEPT
@@ -451,15 +452,24 @@ script_setup() {
 	iptables -A FORWARD -i wan -o wap -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 	# Enable masquerading (NAT) for traffic going out to WAN
-	iptables -t nat -A POSTROUTING -o wan -j MASQUERADE
-	
+	iptables -t nat -I POSTROUTING -o wan -j MASQUERADE
+
+    echo "Saving iptables rules"
+	echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
+	iptables-save > /etc/iptables/rules.v4
+
 	#----------------------------------------------------------------------------
 	echo "Setup networking interfaces"
 	#----------------------------------------------------------------------------
 	# Indentify interface hw addresses
-	WAN_MAC=$(networkctl status ${cfg_network_wan_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-	LAN_MAC=$(networkctl status ${cfg_network_lan_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-	WAP_MAC=$(networkctl status ${cfg_network_wap_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+	WAN_MAC=$(networkctl status ${cfg_network_wan_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}') \
+	>&2 WAN_MAC=$(networkctl status wan | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+
+	LAN_MAC=$(networkctl status ${cfg_network_lan_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}') \
+	>&2 LAN_MAC=$(networkctl status lan | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+
+	WAP_MAC=$(networkctl status ${cfg_network_wap_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}') \
+	>&2 WAP_MAC=$(networkctl status wap | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
 
 	# Configure interfaces
 	cat <<- EOF > /etc/netplan/01-netcfg.yaml
@@ -493,7 +503,7 @@ script_setup() {
 	      set-name: wap
 	      # Prevent waiting for interface
 	      optional: yes
-	      addresses: [${cfg_network_wifi_addrs}]
+	      addresses: [${cfg_network_wap_addrs}]
 	      nameservers:
 	        addresses: [${cfg_network_wan_gate4}]
 	EOF
@@ -504,7 +514,7 @@ script_setup() {
 	# enable the DHCP server to always be running and serve IP addresses the moment you connect a client. 
 	for FILE in lan wap; do
 		cp "/run/systemd/network/10-netplan-${FILE}.network" "/etc/systemd/network/10-netplan-${FILE}.network"
-		echo "ConfigureWithoutCarrier=yes" >> "10-netplan-${FILE}.network"
+		echo "ConfigureWithoutCarrier=yes" >> "/etc/systemd/network/10-netplan-${FILE}.network"
 	done
 
 	#----------------------------------------------------------------------------
@@ -516,23 +526,28 @@ script_setup() {
 	cat <<- EOF > /etc/dhcp/dhcpd.conf
 	default-lease-time 600;
 	max-lease-time 7200;
-	authoritative;
-
-	option subnet-mask 255.255.255.0;
-	option routers ${cfg_network_wan_gate4};
-	option domain-name-servers ${cfg_network_wan_gate4};
-	option domain-name "${cfg_droot_host}";
 
 	subnet ${cfg_network_lan_addrs%.*}.0 netmask 255.255.255.0 {
 	  range ${cfg_network_lan_addrs%.*}.10 ${cfg_network_lan_addrs%.*}.25;
+	  option routers ${cfg_network_wan_gate4};
+	  option domain-name-servers ${cfg_network_wan_gate4};
 	  option broadcast-address ${cfg_network_lan_addrs%.*}.255;
 	}
 
-	subnet ${cfg_network_wifi_addrs%.*}.0 netmask 255.255.255.0 {
-	  range ${cfg_network_wifi_addrs%.*}.10 ${cfg_network_wifi_addrs%.*}.25;
-	  option broadcast-address ${cfg_network_wifi_addrs%.*}.255;
+	subnet ${cfg_network_wap_addrs%.*}.0 netmask 255.255.255.0 {
+	  range ${cfg_network_wap_addrs%.*}.10 ${cfg_network_wap_addrs%.*}.25;
+	  option routers ${cfg_network_wan_gate4};
+	  option domain-name-servers ${cfg_network_wan_gate4};
+	  option broadcast-address ${cfg_network_wap_addrs%.*}.255;
 	}
 	EOF
+
+	#----------------------------------------------------------------------------
+	echo "Update systemd-resolved listener"
+	# creates symbolic link to /etc/resolv.conf
+	#----------------------------------------------------------------------------
+	# ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+	# ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
 	#----------------------------------------------------------------------------
 	echo "Setup wireless access point"
@@ -543,6 +558,8 @@ script_setup() {
 	sed -i 's/.*RestartSec.*/RestartSec=5/' /lib/systemd/system/hostapd.service
 
 	systemctl enable hostapd
+
+	log "Reboot to ensure DHCP is set on local interfaces."
 
 	# netstat -rn
 	# networkctl -a status
