@@ -203,14 +203,6 @@ media_setup() {
     touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
     chmod 400 "$HOME/.ssh/id_ed25519_${cfg_droot_host}"
 
-    # cat <<- EOF | tee ~/.ssh/config
-	# Host $cfg_droot_host
-	# HostName ${cfg_network_wan_haddr}
-	# User $cfg_droot_user
-	# IdentityFile $HOME/.ssh/id_ed25519_${cfg_droot_host}
-	# IdentitiesOnly yes
-	# EOF
-
     #----------------------------------------------------------------------------
     log "Setup storage media"
     #----------------------------------------------------------------------------
@@ -265,7 +257,7 @@ media_setup() {
 
 script_setup() {
 	#----------------------------------------------------------------------------
-    log "Generate final system scripts."
+	log "Generate final system scripts."
 	#----------------------------------------------------------------------------
 	suds "mkdir -p  $cfg_droot_path/home/$cfg_droot_user/scadrial"
 	suds "cp -r ./* $cfg_droot_path/home/$cfg_droot_user/scadrial/"
@@ -342,7 +334,7 @@ script_setup() {
 
 	apt-get install -y --no-install-recommends "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs \
 	git ssh pciutils lvm2 iw hostapd gdisk btrfs-progs debootstrap parted fwupd net-tools bridge-utils iproute2 iptables \
-	iptables-persistent ipset isc-dhcp-server ca-certificates
+	iptables-persistent ipset isc-dhcp-server ca-certificates figlet
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
@@ -353,7 +345,7 @@ script_setup() {
 	chmod 700 /home/${cfg_droot_user}/.ssh && chmod 600 /home/${cfg_droot_user}/.ssh/authorized_keys
 
 	#----------------------------------------------------------------------------
-	log "Setup systemd-boot files"
+	figlet "Scadrial: Setup systemd-boot"
 	#----------------------------------------------------------------------------
 	mkdir -p /boot/efi/{ubuntu,loader/entries}
 	cat <<- EOF > /boot/efi/loader/loader.conf
@@ -375,17 +367,36 @@ script_setup() {
 	done
 
 	update-initramfs -u -k all
-	bootctl install --path=/boot/efi
+	bootctl install --path=/boot/efi --no-variables
 
 	#----------------------------------------------------------------------------
-	log "Clone git repos"
+	figlet "Scadrial: Setup Git repos"
 	#----------------------------------------------------------------------------
-	git clone https://github.com/sstephenson/bats.git
-	git clone https://github.com/konstruktoid/hardening.git
-	git clone https://gitlab.com/cyber5k/mistborn.git
+	# Setup mistborn repository
+	if [ -d mistborn ]; then
+		(cd mistborn && git pull --rebase)
+	else
+		git clone https://gitlab.com/cyber5k/mistborn.git
+	fi
+
+	# Setup bats testing respsitory
+	if [ -d bats ]; then
+		(cd bats && git pull --rebase)
+	else
+		git clone https://github.com/sstephenson/bats.git
+	fi
+
+	# Setup hardening scripts repository
+	if [ -d hardening ]; then
+		(cd hardening && git reset --hard > /dev/null && git pull --rebase)
+	else
+		git clone https://github.com/konstruktoid/hardening.git
+	fi
+	# Update hardending scripts for scadrial
 	sed -i "s|cp ./config/tmp.mount|#cp ./config/tmp.mount|g" ./hardening/scripts/08_fstab
 
 	#----------------------------------------------------------------------------
+	figlet "Scadrial: Wrap-up"
 	log "The initial media configuration complete. Pending steps to complete on the host."
 	echo "Exit chroot and umount our media, as follows:"
 	#----------------------------------------------------------------------------
@@ -411,65 +422,22 @@ script_setup() {
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
 	#----------------------------------------------------------------------------
-	log "Setup networking..."
+	figlet "Scadrial: Setup networking..."
 	#----------------------------------------------------------------------------
-
-	#----------------------------------------------------------------------------
-	echo "Enable routing"
-	#----------------------------------------------------------------------------
-	# Ensure your computer knows it is supposed to be a router,
-	sed -i 's/.*net.ipv4.ip_forward.*/net.ipv4.ip_forward=1/' /etc/sysctl.conf
-	sysctl -p /etc/sysctl.conf
-
-	#----------------------------------------------------------------------------
-	echo "Set initial firewall policy and ruleset, and enable NAT"
-	#----------------------------------------------------------------------------
-	# Start from a blank slate. Flush all iptables rules
-	iptables -F
-	iptables -X
-	iptables -Z
-
-	# Set default iptables Chain Policy to drop
-	iptables -t nat -P PREROUTING ACCEPT
-	iptables -P INPUT DROP
-	iptables -P FORWARD DROP
-	iptables -P OUTPUT ACCEPT
-
-	# Accept incoming packets from localhost and local interfaces.
-	iptables -A INPUT -i lo  -j ACCEPT
-	iptables -A INPUT -i lan -j ACCEPT
-	iptables -A INPUT -i wap -j ACCEPT
-
-	# Accept incoming packets from the WAN if the router initiated the connection.
-	iptables -A INPUT -i wan -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-	# Accept forwarded packets from local interfaces to the WAN.
-	iptables -A FORWARD -i lan -o wan -j ACCEPT
-	iptables -A FORWARD -i wap -o wan -j ACCEPT
-
-	# Accept forwarded packets from WAN to local interfaces that initiated a connection.
-	iptables -A FORWARD -i wan -o lan -m state --state ESTABLISHED,RELATED -j ACCEPT
-	iptables -A FORWARD -i wan -o wap -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-	# Enable masquerading (NAT) for traffic going out to WAN
-	iptables -t nat -I POSTROUTING -o wan -j MASQUERADE
-
-    echo "Saving iptables rules"
-	echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
-	iptables-save > /etc/iptables/rules.v4
 
 	#----------------------------------------------------------------------------
 	echo "Setup networking interfaces"
 	#----------------------------------------------------------------------------
 	# Indentify interface hw addresses
-	WAN_MAC=$(networkctl status ${cfg_network_wan_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}') \
-	>&2 WAN_MAC=$(networkctl status wan | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-
-	LAN_MAC=$(networkctl status ${cfg_network_lan_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}') \
-	>&2 LAN_MAC=$(networkctl status lan | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-
-	WAP_MAC=$(networkctl status ${cfg_network_wap_iface} | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}') \
-	>&2 WAP_MAC=$(networkctl status wap | grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+	WAN_MAC=$((networkctl status ${cfg_network_wan_iface} 2>/dev/null || networkctl status wan 2>/dev/null) | \
+	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+	LAN_MAC=$((networkctl status ${cfg_network_lan_iface} 2>/dev/null || networkctl status lan 2>/dev/null) | \
+	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+	WAP_MAC=$((networkctl status ${cfg_network_wap_iface} 2>/dev/null || networkctl status wap 2>/dev/null) | \
+	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+	
+	# real address for public interface (wan)
+	riface=$(ip -o -4 addr | awk '/dynamic/ && /wan/ {print $4}' | sed "s|/24||")
 
 	# Configure interfaces
 	cat <<- EOF > /etc/netplan/01-netcfg.yaml
@@ -494,7 +462,7 @@ script_setup() {
 	      optional: yes
 	      addresses: [${cfg_network_lan_addrs}]
 	      nameservers:
-	        addresses: [${cfg_network_wan_gate4}]
+	        addresses: [${riface}]
 	    wap:
 	      dhcp4: no
 	      dhcp6: no
@@ -505,7 +473,7 @@ script_setup() {
 	      optional: yes
 	      addresses: [${cfg_network_wap_addrs}]
 	      nameservers:
-	        addresses: [${cfg_network_wan_gate4}]
+	        addresses: [${riface}]
 	EOF
 
 	netplan apply
@@ -513,8 +481,8 @@ script_setup() {
 	# NOTE: local networks should be up even if there is no carrier (aka: no client connected). This will
 	# enable the DHCP server to always be running and serve IP addresses the moment you connect a client. 
 	for FILE in lan wap; do
-		cp "/run/systemd/network/10-netplan-${FILE}.network" "/etc/systemd/network/10-netplan-${FILE}.network"
-		echo "ConfigureWithoutCarrier=yes" >> "/etc/systemd/network/10-netplan-${FILE}.network"
+	  cp "/run/systemd/network/10-netplan-${FILE}.network" "/etc/systemd/network/10-netplan-${FILE}.network"
+	  echo "ConfigureWithoutCarrier=yes" >> "/etc/systemd/network/10-netplan-${FILE}.network"
 	done
 
 	#----------------------------------------------------------------------------
@@ -529,25 +497,16 @@ script_setup() {
 
 	subnet ${cfg_network_lan_addrs%.*}.0 netmask 255.255.255.0 {
 	  range ${cfg_network_lan_addrs%.*}.10 ${cfg_network_lan_addrs%.*}.25;
-	  option routers ${cfg_network_wan_gate4};
-	  option domain-name-servers ${cfg_network_wan_gate4};
-	  option broadcast-address ${cfg_network_lan_addrs%.*}.255;
+	  option routers ${riface};
+	  option domain-name-servers ${riface};
 	}
 
 	subnet ${cfg_network_wap_addrs%.*}.0 netmask 255.255.255.0 {
 	  range ${cfg_network_wap_addrs%.*}.10 ${cfg_network_wap_addrs%.*}.25;
-	  option routers ${cfg_network_wan_gate4};
-	  option domain-name-servers ${cfg_network_wan_gate4};
-	  option broadcast-address ${cfg_network_wap_addrs%.*}.255;
+	  option routers ${riface};
+	  option domain-name-servers ${riface};
 	}
 	EOF
-
-	#----------------------------------------------------------------------------
-	echo "Update systemd-resolved listener"
-	# creates symbolic link to /etc/resolv.conf
-	#----------------------------------------------------------------------------
-	# ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-	# ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
 	#----------------------------------------------------------------------------
 	echo "Setup wireless access point"
@@ -558,11 +517,9 @@ script_setup() {
 	sed -i 's/.*RestartSec.*/RestartSec=5/' /lib/systemd/system/hostapd.service
 
 	systemctl enable hostapd
+	systemctl enable systemd-networkd
 
 	log "Reboot to ensure DHCP is set on local interfaces."
-
-	# netstat -rn
-	# networkctl -a status
 	SEOF
 
 	cat <<- 'SEOF' > system_02_mistborn.sh
@@ -582,26 +539,28 @@ script_setup() {
 	echo "sudo mistborn-cli getconf"
 
 	log "After the admin Wireguard profile is ready, run:"
-	echo "sudo system_02b_mistborn.sh"
+	echo "sudo system_03_routing.sh"
 	SEOF
 
 	cat <<- 'SEOF' > system_03_routing.sh
 	#!/bin/bash
-	source "lib/functions.sh"
-	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
-	#----------------------------------------------------------------------------
-	log "Update iptables to forward local network traffic to wireguard tunnel"
-	#----------------------------------------------------------------------------
-	EXTIF=LAN
-	INTIF="$(cd /etc/wireguard && ls -1t *.conf | sed s/.conf//)"
+	figlet "Scadrial: Local Wireguard"
+	wfile="$(cd /etc/wireguard && ls -1t ./*.conf)"
 
-	iptables -A MISTBORN_FORWARD_${INTIF} -i $EXTIF -o $INTIF -m state --state ESTABLISHED,RELATED -j ACCEPT
-	iptables -A MISTBORN_FORWARD_${INTIF} -i $INTIF -o $EXTIF -j ACCEPT
-	iptables -t nat -A POSTROUTING -o $EXTIF -j MASQUERADE
+	for iface in wan lan; do
+		sed -i "/.*${iface} -.*/d" "/etc/wireguard/$wfile"
+	done
 
-	echo "Saving iptables rules"
-	sudo bash -c "iptables-save > /etc/iptables/rules.v4"
+	cat <<- EOF > tmp.conf
+	$(head wg41965.conf -n 10)
+	PostUp = iptables -w -A MISTBORN_FORWARD_%i -i %i -o lan -j ACCEPT
+	PostUp = iptables -w -A MISTBORN_FORWARD_%i -i lan -o %i -m state --state ESTABLISHED,RELATED -j ACCEPT
+	PostUp = iptables -w -A MISTBORN_FORWARD_%i -i %i -o wap -j ACCEPT
+	PostUp = iptables -w -A MISTBORN_FORWARD_%i -i wap -o %i -m state --state ESTABLISHED,RELATED -j ACCEPT
+	$(tail wg41965.conf -n +11)
+	EOF
+	mv tmp.conf "/etc/wireguard/$wfile"
 	SEOF
 
 	cat <<- 'SEOF' > system_04_hardening.sh
