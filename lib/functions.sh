@@ -2,11 +2,11 @@
 
 # Config values for the media setup
 # shellcheck disable=SC2154
-echo "$cfg_device_name $cfg_device_pool $cfg_device_optn $cfg_device_luks" > /dev/null
+echo "$cfg_scadrial_device_name $cfg_scadrial_device_pool $cfg_scadrial_device_optn $cfg_scadrial_device_luks" > /dev/null
 
 # Config values for the new environment
 # shellcheck disable=SC2154
-echo "$cfg_droot_host $cfg_droot_user $cfg_droot_path $cfg_dist_name $cfg_dist_vers" > /dev/null
+echo "$cfg_scadrial_chroot_host $cfg_scadrial_chroot_user $cfg_scadrial_chroot_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
 
 shelp() {
     echo "
@@ -115,30 +115,6 @@ parse_yaml() {
     ) < "$yaml_file"
 }
 
-media_reset() {
-  # shellcheck disable=SC2154
-  while read -r p; do
-    # Check if droot path
-    if [ "${p}" == "${cfg_droot_path}" ]; then
-      # unmount binds
-      for b in dev dev/pts proc sys; do
-        # suds "mount --make-rslave $cfg_droot_path/$b"
-        suds "umount -R $cfg_droot_path/$b"
-      done
-
-      # unmount droot partition
-      suds "umount ${p}"
-
-      # close encrypted device
-      suds "cryptsetup luksClose ${cfg_device_luks}"
-      break
-    fi
-
-    # Unmount sub partitions
-    suds "umount ${p}"
-  done < <(df --output=target | grep "${cfg_droot_path}" | tac)
-}
-
 get_pass() {
 	if [ -z "${passphrase:-}" ]; then
 		log "Passphrase/password Setup"
@@ -152,7 +128,7 @@ get_pass() {
 open_luks() {
 	log "Unlock luks volume"
 	if [ "$(sudo blkid | grep -c /dev/mapper/crypt_root)" == 0 ]; then
-		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_device_name}2 ${cfg_device_luks}"; then
+		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}2 ${cfg_scadrial_device_luks}"; then
 			err "Luks Unlock Failed"
 		else
 			echo "Luks Unlocked"
@@ -166,21 +142,45 @@ media_mount() {
 
     log "Mount the partitions"
     #----------------------------------------------------------------------------
-    suds "rm -rf ${cfg_droot_path}"
-    suds "mkdir -p ${cfg_droot_path}"
-    suds "mount -o ${cfg_device_optn},subvol=@      /dev/mapper/crypt_root ${cfg_droot_path}"
-    suds "mkdir -p ${cfg_droot_path}/boot"
-    suds "mount -o ${cfg_device_optn},subvol=@boot  /dev/mapper/crypt_root ${cfg_droot_path}/boot"
-    suds "mkdir -p ${cfg_droot_path}/{boot/efi,home,opt/mistborn_volumes,var}"
-    suds "mount ${cfg_device_name}1 ${cfg_droot_path}/boot/efi"
-    suds "mount -o ${cfg_device_optn},subvol=@home  /dev/mapper/crypt_root ${cfg_droot_path}/home"
-    suds "mount -o ${cfg_device_optn},subvol=@data  /dev/mapper/crypt_root ${cfg_droot_path}/opt/mistborn_volumes"
-    suds "mount -o ${cfg_device_optn},subvol=@var   /dev/mapper/crypt_root ${cfg_droot_path}/var"
-    suds "mkdir -p ${cfg_droot_path}/{var/log,var/tmp}"
-    suds "mount -o ${cfg_device_optn},subvol=@log   /dev/mapper/crypt_root ${cfg_droot_path}/var/log"
-    suds "mkdir -p ${cfg_droot_path}/var/log/audit"
-    suds "mount -o ${cfg_device_optn},subvol=@audit /dev/mapper/crypt_root ${cfg_droot_path}/var/log/audit"
-    suds "mount -o ${cfg_device_optn},subvol=@tmp   /dev/mapper/crypt_root ${cfg_droot_path}/var/tmp"
+    suds "rm -rf ${cfg_scadrial_chroot_path}"
+    suds "mkdir -p ${cfg_scadrial_chroot_path}"
+    suds "mount -o ${cfg_scadrial_device_optn},subvol=@      /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}"
+    suds "mkdir -p ${cfg_scadrial_chroot_path}/boot"
+    suds "mount -o ${cfg_scadrial_device_optn},subvol=@boot  /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/boot"
+    suds "mkdir -p ${cfg_scadrial_chroot_path}/{boot/efi,home,opt/mistborn_volumes,var}"
+    suds "mount ${cfg_scadrial_device_name}1 ${cfg_scadrial_chroot_path}/boot/efi"
+    suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/home"
+    suds "mount -o ${cfg_scadrial_device_optn},subvol=@data  /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/opt/mistborn_volumes"
+    suds "mount -o ${cfg_scadrial_device_optn},subvol=@var   /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/var"
+    suds "mkdir -p ${cfg_scadrial_chroot_path}/{var/log,var/tmp}"
+    suds "mount -o ${cfg_scadrial_device_optn},subvol=@log   /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/var/log"
+    suds "mkdir -p ${cfg_scadrial_chroot_path}/var/log/audit"
+    suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/var/log/audit"
+    suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/var/tmp"
+}
+
+media_reset() {
+  # shellcheck disable=SC2154
+  while read -r p; do
+    # Check if droot path
+    if [ "${p}" == "${cfg_scadrial_chroot_path}" ]; then
+      # unmount binds
+      for b in dev dev/pts proc sys; do
+        # suds "mount --make-rslave $cfg_scadrial_chroot_path/$b"
+        suds "umount -R $cfg_scadrial_chroot_path/$b"
+      done
+
+      # unmount droot partition
+      suds "umount ${p}"
+
+      # close encrypted device
+      suds "cryptsetup luksClose ${cfg_scadrial_device_luks}"
+      break
+    fi
+
+    # Unmount sub partitions
+    suds "umount ${p}"
+  done < <(df --output=target | grep "${cfg_scadrial_chroot_path}" | tac)
 }
 
 media_setup() {
@@ -191,77 +191,64 @@ media_setup() {
 	get_pass
 
     #----------------------------------------------------------------------------
-    log "Generate ssh key pair on the client (i.e. laptop)"
-    #----------------------------------------------------------------------------
-    echo -n "$passphrase" | ssh-keygen -o -a 256 -t ed25519 \
-         -f "$HOME/.ssh/id_ed25519_${cfg_droot_host}" \
-         -C "${cfg_droot_user}@${cfg_droot_host}-$(date -I)"
-    eval "$(ssh-agent -s)"
-    ssh-add "$HOME/.ssh/id_ed25519_${cfg_droot_host}"
-
-    chmod 700 ~/.ssh 
-    touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
-    chmod 400 "$HOME/.ssh/id_ed25519_${cfg_droot_host}"
-
-    #----------------------------------------------------------------------------
     log "Setup storage media"
     #----------------------------------------------------------------------------
 
 	media_reset
 
-    suds "sgdisk -og ${cfg_device_name} \
+    suds "sgdisk -og ${cfg_scadrial_device_name} \
     --new=1::+260M  --typecode=1:EF00 --change-name=1:'EFI partition' \
     --new=2::0      --typecode=2:8304 --change-name=2:'Linux partition'"
 
-    suds "sgdisk -p ${cfg_device_name}"
-    suds "partprobe ${cfg_device_name}"
+    suds "sgdisk -p ${cfg_scadrial_device_name}"
+    suds "partprobe ${cfg_scadrial_device_name}"
 
-    suds "wipefs -af ${cfg_device_name}1"
-    suds "wipefs -af ${cfg_device_name}2"
+    suds "wipefs -af ${cfg_scadrial_device_name}1"
+    suds "wipefs -af ${cfg_scadrial_device_name}2"
 
     #----------------------------------------------------------------------------
     log "Setup encryption"
 	# Escape any dollar signs in the password
     suds "echo -n ${passphrase//$/\\$} | cryptsetup -q -v --iter-time 5000 --type luks2 \
-        --hash sha512 --use-random luksFormat ${cfg_device_name}2 -"
+        --hash sha512 --use-random luksFormat ${cfg_scadrial_device_name}2 -"
 	
 	# shellcheck disable=SC2086
     open_luks $passphrase
 
     #----------------------------------------------------------------------------
     log "Create filesystems"
-    suds "mkfs.vfat -vF32 ${cfg_device_name}1"
-    suds "mkfs.btrfs -L crypt_root /dev/mapper/${cfg_device_luks}"
+    suds "mkfs.vfat -vF32 ${cfg_scadrial_device_name}1"
+    suds "mkfs.btrfs -L crypt_root /dev/mapper/${cfg_scadrial_device_luks}"
 
-    suds "rm -rf ${cfg_device_pool} && mkdir ${cfg_device_pool}"
-    suds "mount -t btrfs -o ${cfg_device_optn} /dev/mapper/crypt_root ${cfg_device_pool}"
-    suds "btrfs subvolume create ${cfg_device_pool}/@"
-    suds "btrfs subvolume create ${cfg_device_pool}/@boot"
-    suds "btrfs subvolume create ${cfg_device_pool}/@home"
-    suds "btrfs subvolume create ${cfg_device_pool}/@data"
-    suds "btrfs subvolume create ${cfg_device_pool}/@var"
-    suds "btrfs subvolume create ${cfg_device_pool}/@log"
-    suds "btrfs subvolume create ${cfg_device_pool}/@audit"
-    suds "btrfs subvolume create ${cfg_device_pool}/@tmp"
+    suds "rm -rf ${cfg_scadrial_device_pool} && mkdir ${cfg_scadrial_device_pool}"
+    suds "mount -t btrfs -o ${cfg_scadrial_device_optn} /dev/mapper/crypt_root ${cfg_scadrial_device_pool}"
+    suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@"
+    suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@boot"
+    suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@home"
+    suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@data"
+    suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@var"
+    suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@log"
+    suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@audit"
+    suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@tmp"
 
-    suds "umount ${cfg_device_pool}"
+    suds "umount ${cfg_scadrial_device_pool}"
 
 	media_mount
 
     #----------------------------------------------------------------------------
     log "Bootstrap the new system"
     #----------------------------------------------------------------------------
-    suds "debootstrap --arch amd64 $cfg_dist_name $cfg_droot_path" http://archive.ubuntu.com/ubuntu
-    for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_droot_path/$b"; done
+    suds "debootstrap --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_chroot_path" http://archive.ubuntu.com/ubuntu
+    for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_chroot_path/$b"; done
 }
 
 script_setup() {
 	#----------------------------------------------------------------------------
 	log "Generate final system scripts."
 	#----------------------------------------------------------------------------
-	suds "mkdir -p  $cfg_droot_path/home/$cfg_droot_user/scadrial"
-	suds "cp -r ./* $cfg_droot_path/home/$cfg_droot_user/scadrial/"
-	suds "cp $cfg_droot_path/etc/skel/.* $cfg_droot_path/home/$cfg_droot_user/ 2> /dev/null"
+	suds "mkdir -p  $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/scadrial"
+	suds "cp -r ./* $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/scadrial/"
+	suds "cp $cfg_scadrial_chroot_path/etc/skel/.* $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/ 2> /dev/null"
 
 	cat <<- 'SEOF' > scadrial-finalize.sh
 	#!/bin/bash
@@ -279,40 +266,41 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	log "Setup environment, user and access"
 	#----------------------------------------------------------------------------
-	useradd -M -s /bin/bash "$cfg_droot_user"
-	echo "${cfg_droot_user}:${passphrase}" | chpasswd
-	set_sudoer "$cfg_droot_user"
+	useradd -M -s /bin/bash "$cfg_scadrial_chroot_user"
+	echo "${cfg_scadrial_chroot_user}:${passphrase}" | chpasswd
+	set_sudoer "$cfg_scadrial_chroot_user"
+	suds "chown -R $cfg_scadrial_chroot_user:$cfg_scadrial_chroot_user /home/$cfg_scadrial_chroot_user"
 	
 	sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
-	echo "$cfg_droot_host" > /etc/hostname
+	echo "$cfg_scadrial_chroot_host" > /etc/hostname
 	echo LANG=en_US.UTF-8 > /etc/locale.conf
-	ln -sf /usr/share/zoneinfo/${cfg_droot_tzne} /etc/localtime
+	ln -sf /usr/share/zoneinfo/${cfg_scadrial_chroot_tzne} /etc/localtime
 	locale-gen en_US.UTF-8
 
 	#----------------------------------------------------------------------------
 	log "Configure partitions"
 	#----------------------------------------------------------------------------
-	pluks="$(blkid -s PARTUUID -o value ${cfg_device_name}2)"
+	pluks="$(blkid -s PARTUUID -o value ${cfg_scadrial_device_name}2)"
 
 	# Setup the device UUID that contains our luks volume
 	echo "# <target name>	<source device>		<key file>	<options>" > /etc/crypttab
-	echo "$cfg_device_luks PARTUUID=$pluks none luks,discard" >> /etc/crypttab
+	echo "$cfg_scadrial_device_luks PARTUUID=$pluks none luks,discard" >> /etc/crypttab
 
 	# Setup the partitions
-	eboot="$(blkid -s UUID -o value ${cfg_device_name}1)"
-	croot="$(blkid -s UUID -o value /dev/mapper/$cfg_device_luks)"
+	eboot="$(blkid -s UUID -o value ${cfg_scadrial_device_name}1)"
+	croot="$(blkid -s UUID -o value /dev/mapper/$cfg_scadrial_device_luks)"
 
 	cat <<- EOF | tee /etc/fstab
-	UUID=$croot  /                     btrfs   rw,${cfg_device_optn},subvol=@                           0 0
-	UUID=$croot  /boot                 btrfs   rw,${cfg_device_optn},subvol=@boot,nosuid,nodev          0 0
+	UUID=$croot  /                     btrfs   rw,${cfg_scadrial_device_optn},subvol=@                           0 0
+	UUID=$croot  /boot                 btrfs   rw,${cfg_scadrial_device_optn},subvol=@boot,nosuid,nodev          0 0
 	UUID=$eboot                             /boot/efi             vfat    rw,umask=0077                                           0 1
-	UUID=$croot  /home                 btrfs   rw,${cfg_device_optn},subvol=@home,nosuid,nodev          0 0
-	UUID=$croot  /opt/mistborn_volumes btrfs   rw,${cfg_device_optn},subvol=@data,nosuid,nodev,noexec   0 0
-	UUID=$croot  /var                  btrfs   rw,${cfg_device_optn},subvol=@var                        0 0
-	UUID=$croot  /var/log              btrfs   rw,${cfg_device_optn},subvol=@log,nosuid,nodev,noexec    0 0
-	UUID=$croot  /var/log/audit        btrfs   rw,${cfg_device_optn},subvol=@audit,nosuid,nodev,noexec  0 0
-	UUID=$croot  /var/tmp              btrfs   rw,${cfg_device_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
+	UUID=$croot  /home                 btrfs   rw,${cfg_scadrial_device_optn},subvol=@home,nosuid,nodev          0 0
+	UUID=$croot  /opt/mistborn_volumes btrfs   rw,${cfg_scadrial_device_optn},subvol=@data,nosuid,nodev,noexec   0 0
+	UUID=$croot  /var                  btrfs   rw,${cfg_scadrial_device_optn},subvol=@var                        0 0
+	UUID=$croot  /var/log              btrfs   rw,${cfg_scadrial_device_optn},subvol=@log,nosuid,nodev,noexec    0 0
+	UUID=$croot  /var/log/audit        btrfs   rw,${cfg_scadrial_device_optn},subvol=@audit,nosuid,nodev,noexec  0 0
+	UUID=$croot  /var/tmp              btrfs   rw,${cfg_scadrial_device_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
 	tmpfs                                      /tmp                  tmpfs   rw,noexec,nosuid,nodev                     0 0
 	none                                       /run/shm              tmpfs   rw,noexec,nosuid,nodev                     0 0
 	none                                       /dev/shm              tmpfs   rw,noexec,nosuid,nodev                     0 0
@@ -330,19 +318,19 @@ script_setup() {
 	echo "deb http://archive.ubuntu.com/ubuntu focal-backports main universe" >> /etc/apt/sources.list
 	apt-get update && apt-get -y upgrade
 
-	kernel="linux-image-generic-hwe-${cfg_dist_vers}"
+	kernel="linux-image-generic-hwe-${cfg_scadrial_dist_vers}"
 
 	apt-get install -y --no-install-recommends "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs \
 	git ssh pciutils lvm2 iw hostapd gdisk btrfs-progs debootstrap parted fwupd net-tools bridge-utils iproute2 iptables \
-	iptables-persistent ipset isc-dhcp-server ca-certificates figlet
+	isc-dhcp-server ca-certificates figlet
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
 	sed -i "/UMASK=0077/d" /etc/initramfs-tools/initramfs.conf
 	echo "UMASK=0077" >> /etc/initramfs-tools/initramfs.conf
 
-	mkdir -p /home/${cfg_droot_user}/.ssh && touch /home/${cfg_droot_user}/.ssh/authorized_keys
-	chmod 700 /home/${cfg_droot_user}/.ssh && chmod 600 /home/${cfg_droot_user}/.ssh/authorized_keys
+	mkdir -p /home/${cfg_scadrial_chroot_user}/.ssh && touch /home/${cfg_scadrial_chroot_user}/.ssh/authorized_keys
+	chmod 700 /home/${cfg_scadrial_chroot_user}/.ssh && chmod 600 /home/${cfg_scadrial_chroot_user}/.ssh/authorized_keys
 
 	#----------------------------------------------------------------------------
 	figlet "Scadrial: Setup systemd-boot"
@@ -358,7 +346,7 @@ script_setup() {
 	title   Ubuntu
 	linux   /ubuntu/vmlinuz
 	initrd  /ubuntu/initrd.img
-	options cryptdevice=PARTUUID=${pluks}:${cfg_device_luks}:allow-discards root=/dev/mapper/${cfg_device_luks} rootflags=subvol=@ rd.luks.options=discard rw
+	options cryptdevice=PARTUUID=${pluks}:${cfg_scadrial_device_luks}:allow-discards root=/dev/mapper/${cfg_scadrial_device_luks} rootflags=subvol=@ rd.luks.options=discard rw
 	EOF
 
 	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
@@ -370,7 +358,7 @@ script_setup() {
 	bootctl install --path=/boot/efi --no-variables
 
 	#----------------------------------------------------------------------------
-	figlet "Scadrial: Setup Git repos"
+	figlet "Scadrial: Git repo setup"
 	#----------------------------------------------------------------------------
 	# Setup mistborn repository
 	if [ -d mistborn ]; then
@@ -400,6 +388,20 @@ script_setup() {
 	log "The initial media configuration complete. Pending steps to complete on the host."
 	echo "Exit chroot and umount our media, as follows:"
 	#----------------------------------------------------------------------------
+	
+	# Enable wan interface to identify IP address
+	cat <<- EOF > /etc/netplan/01-netcfg.yaml
+	# This file describes the network interfaces available on your system
+	# For more information, see netplan(5).
+	network:
+	  version: 2
+	  renderer: networkd
+	  ethernets:
+	    ${cfg_scadrial_network_wan_iface}:
+	      dhcp4: yes
+	EOF
+	
+	netplan apply
 	echo "exit"
 	echo "sudo ./scadrial-setup.sh unmount"
 
@@ -409,9 +411,8 @@ script_setup() {
 	echo "cd scadrial"
 	echo "sudo ./system_01_networking.sh"
 	echo "sudo ./system_02_mistborn.sh"
-	echo "sudo ./system_03_routing.sh"
 	echo "Still work in progress..."
-	echo "sudo ./system_04_hardening.sh"
+	echo "sudo ./system_03_hardening.sh"
 	SEOF
 
 	cat <<- 'SEOF' > system_01_networking.sh
@@ -429,15 +430,15 @@ script_setup() {
 	echo "Setup networking interfaces"
 	#----------------------------------------------------------------------------
 	# Indentify interface hw addresses
-	WAN_MAC=$((networkctl status ${cfg_network_wan_iface} 2>/dev/null || networkctl status wan 2>/dev/null) | \
+	WAN_MAC=$((networkctl status ${cfg_scadrial_network_wan_iface} 2>/dev/null || networkctl status wan 2>/dev/null) | \
 	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-	LAN_MAC=$((networkctl status ${cfg_network_lan_iface} 2>/dev/null || networkctl status lan 2>/dev/null) | \
+	LAN_MAC=$((networkctl status ${cfg_scadrial_network_lan_iface} 2>/dev/null || networkctl status lan 2>/dev/null) | \
 	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-	WAP_MAC=$((networkctl status ${cfg_network_wap_iface} 2>/dev/null || networkctl status wap 2>/dev/null) | \
+	WAP_MAC=$((networkctl status ${cfg_scadrial_network_wap_iface} 2>/dev/null || networkctl status wap 2>/dev/null) | \
 	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
 	
-	# real address for public interface (wan)
-	riface=$(ip -o -4 addr | awk '/dynamic/ && /wan/ {print $4}' | sed "s|/24||")
+	# Get the real address for the public interface (wan)
+	riface=$(networkctl -a status | awk '/DHCP4/ {print $1 $2}' | sed 's/Address://' | sed 's/(DHCP4)//')
 
 	# Configure interfaces
 	cat <<- EOF > /etc/netplan/01-netcfg.yaml
@@ -448,7 +449,7 @@ script_setup() {
 	  renderer: networkd
 	  ethernets:
 	    wan:
-	      dhcp4: ${cfg_network_wan_dhcp4}
+	      dhcp4: yes
 	      match:
 	        macaddress: ${WAN_MAC}
 	      set-name: wan
@@ -460,7 +461,7 @@ script_setup() {
 	      set-name: lan
 	      # Prevent waiting for interface
 	      optional: yes
-	      addresses: [${cfg_network_lan_addrs}]
+	      addresses: [${cfg_scadrial_network_lan_addrs}]
 	      nameservers:
 	        addresses: [${riface}]
 	    wap:
@@ -471,7 +472,7 @@ script_setup() {
 	      set-name: wap
 	      # Prevent waiting for interface
 	      optional: yes
-	      addresses: [${cfg_network_wap_addrs}]
+	      addresses: [${cfg_scadrial_network_wap_addrs}]
 	      nameservers:
 	        addresses: [${riface}]
 	EOF
@@ -490,19 +491,21 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	# Configure the dhcp server settings for local connections.
 	sed -i "s/.*INTERFACESv4.*/INTERFACESv4=\"lan wap\"/" /etc/default/isc-dhcp-server
+	sed -i "s/.*INTERFACESv6.*/#INTERFACESv6=/" /etc/default/isc-dhcp-server
+	systemctl disable isc-dhcp-server6
 	
 	cat <<- EOF > /etc/dhcp/dhcpd.conf
 	default-lease-time 600;
 	max-lease-time 7200;
 
-	subnet ${cfg_network_lan_addrs%.*}.0 netmask 255.255.255.0 {
-	  range ${cfg_network_lan_addrs%.*}.10 ${cfg_network_lan_addrs%.*}.25;
+	subnet ${cfg_scadrial_network_lan_addrs%.*}.0 netmask 255.255.255.0 {
+	  range ${cfg_scadrial_network_lan_addrs%.*}.10 ${cfg_scadrial_network_lan_addrs%.*}.25;
 	  option routers ${riface};
 	  option domain-name-servers ${riface};
 	}
 
-	subnet ${cfg_network_wap_addrs%.*}.0 netmask 255.255.255.0 {
-	  range ${cfg_network_wap_addrs%.*}.10 ${cfg_network_wap_addrs%.*}.25;
+	subnet ${cfg_scadrial_network_wap_addrs%.*}.0 netmask 255.255.255.0 {
+	  range ${cfg_scadrial_network_wap_addrs%.*}.10 ${cfg_scadrial_network_wap_addrs%.*}.25;
 	  option routers ${riface};
 	  option domain-name-servers ${riface};
 	}
@@ -513,6 +516,11 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	cp hostapd.conf /etc/hostapd/hostapd.conf
 
+	# Update configuration file
+	sed -i "s/ssid=.*/ssid=${cfg_scadrial_network_wap_ssid}/" /etc/hostapd/hostapd.conf
+	sed -i "s/wpa_passphrase=.*/wpa_passphrase=${cfg_scadrial_network_wap_pass}/" /etc/hostapd/hostapd.conf
+
+	# Update service file
 	sed -i 's/.*Restart.*/Restart=always/' /lib/systemd/system/hostapd.service
 	sed -i 's/.*RestartSec.*/RestartSec=5/' /lib/systemd/system/hostapd.service
 
@@ -526,6 +534,8 @@ script_setup() {
 	#!/bin/bash
 	source "lib/functions.sh"
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
+	
+	export MISTBORN_INSTALL_COCKPIT="${cfg_scadrial_chroot_cpit}"
 
 	#----------------------------------------------------------------------------
 	log "Install Mistborn..."
@@ -537,33 +547,9 @@ script_setup() {
 
 	log "Type the following to get the admin Wireguard profile:"
 	echo "sudo mistborn-cli getconf"
-
-	log "After the admin Wireguard profile is ready, run:"
-	echo "sudo system_03_routing.sh"
 	SEOF
 
-	cat <<- 'SEOF' > system_03_routing.sh
-	#!/bin/bash
-
-	figlet "Scadrial: Local Wireguard"
-	wfile="$(cd /etc/wireguard && ls -1t ./*.conf)"
-
-	for iface in wan lan; do
-		sed -i "/.*${iface} -.*/d" "/etc/wireguard/$wfile"
-	done
-
-	cat <<- EOF > tmp.conf
-	$(head wg41965.conf -n 10)
-	PostUp = iptables -w -A MISTBORN_FORWARD_%i -i %i -o lan -j ACCEPT
-	PostUp = iptables -w -A MISTBORN_FORWARD_%i -i lan -o %i -m state --state ESTABLISHED,RELATED -j ACCEPT
-	PostUp = iptables -w -A MISTBORN_FORWARD_%i -i %i -o wap -j ACCEPT
-	PostUp = iptables -w -A MISTBORN_FORWARD_%i -i wap -o %i -m state --state ESTABLISHED,RELATED -j ACCEPT
-	$(tail wg41965.conf -n +11)
-	EOF
-	mv tmp.conf "/etc/wireguard/$wfile"
-	SEOF
-
-	cat <<- 'SEOF' > system_04_hardening.sh
+	cat <<- 'SEOF' > system_03_hardening.sh
 	#!/bin/bash
 	source "lib/functions.sh"
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
@@ -595,6 +581,5 @@ script_setup() {
 
 	# Move the second step script to our media device
 	sudo chmod +x scadrial-finalize.sh system_*.sh
-	suds "mv scadrial-finalize.sh system_*.sh $cfg_droot_path/home/$cfg_droot_user/scadrial"
-	suds "chown -R 1000:1000 $cfg_droot_path/home/$cfg_droot_user"
+	suds "mv scadrial-finalize.sh system_*.sh $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/scadrial"
 }

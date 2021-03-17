@@ -1,35 +1,38 @@
 # This file contains high level configuration parameters for setup 
 
-# Parameters for the Ubuntu distribution
-dist:
-  name: focal
-  vers: 20.04
-# Parameters for destination media
-device:
-  name: /dev/sda
-  pool: /mnt/btrfs_pool
-  optn: ssd,noatime,compress=zstd,commit=120
-  luks: crypt_root
-# Parameters for chroot environment
-droot:
-  path: /mnt/debootpath
-  user: mistborn
-  host: scadrial
-  tzne: America/Los_Angeles
-# Parameters for netplan configuration
-# https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-consistent_network_device_naming
-# https://ubuntu.com/blog/ubuntu-bionic-netplan
-network:
-  # wide-area network
-  wan:
-    iface: eno1
-    dhcp4: yes
-    dhcp6: no
-  # local-area network
-  lan:
-    iface: enp4s0
-    addrs: 10.16.35.1/24
-  # wireless network
-  wap:
-    iface: wlp2s0
-    addrs: 10.16.45.1/24
+scadrial:
+  # Parameters for the Ubuntu distribution
+  dist:
+    name: focal
+    vers: 20.04
+  # Parameters for destination media
+  device:
+    name: /dev/sda
+    pool: /mnt/btrfs_pool
+    optn: ssd,noatime,compress=zstd,commit=120
+    luks: crypt_root
+  # Parameters for chroot environment
+  chroot:
+    path: /mnt/debootpath
+    user: mistborn
+    host: scadrial
+    tzne: America/Los_Angeles
+    # Install cockpit (y/N)
+    cpit: y
+  # Parameters for networking (netplan) configuration
+  # https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-consistent_network_device_naming
+  # https://ubuntu.com/blog/ubuntu-bionic-netplan
+  network:
+    # wide-area network
+    wan:
+      iface: eno1
+    # local-area network
+    lan:
+      iface: enp4s0
+      addrs: 10.16.35.1/24
+    # wireless access point
+    wap:
+      iface: wlp2s0
+      addrs: 10.16.45.1/24
+      pass: 3fiWk9IoVYJmNm4unYoHjizWPuf8WsLv
+      ssid: Elend Venture
