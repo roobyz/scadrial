@@ -280,6 +280,8 @@ script_setup() {
 	useradd -M -s /bin/bash "$cfg_scadrial_chroot_user"
 	echo "${cfg_scadrial_chroot_user}:${passphrase}" | chpasswd
 	set_sudoer "$cfg_scadrial_chroot_user"
+
+	# Set correct ownership to home
 	suds "chown -R $cfg_scadrial_chroot_user:$cfg_scadrial_chroot_user /home/$cfg_scadrial_chroot_user"
 	
 	sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
@@ -411,6 +413,9 @@ script_setup() {
 	EOF
 	
 	netplan apply
+
+	# Set correct ownership to new home folders
+	suds "chown -R $cfg_scadrial_chroot_user:$cfg_scadrial_chroot_user /home/$cfg_scadrial_chroot_user"
 
 	log "The initial media configuration complete. Pending steps to complete on the host."
 	echo "Exit chroot and umount our media, as follows:"
