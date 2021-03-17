@@ -34,5 +34,6 @@ scadrial:
     wap:
       iface: wlp2s0
       addrs: 10.16.45.1/24
+      # replace passphrase with something unique
       pass: 3fiWk9IoVYJmNm4unYoHjizWPuf8WsLv
       ssid: Elend Venture
