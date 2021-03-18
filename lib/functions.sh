@@ -128,17 +128,45 @@ get_pass() {
 open_luks() {
 	log "Unlock luks volume"
 	media_part
-	if [ "$(sudo blkid | grep -c /dev/mapper/crypt_root)" == 0 ]; then
-		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${cfg_scadrial_device_luks}"; then
+
+	# Check whether the same base-name is used
+	if [ "$(cd /dev/mapper/ && find . -maxdepth 1 -name 'crypt_root*' | wc -l)" == "0" ]; then
+		# Name our new device
+		luks_dev="${cfg_scadrial_device_luks}0"
+
+		# Open luks device with passphrase parameter
+		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${luks_dev}"; then
 			err "Luks Unlock Failed"
 		else
 			echo "Luks Unlocked"
 		fi
-	fi 
+	else
+		# Check name if the target luks device is already open
+		if [ "$(lsblk "${cfg_scadrial_device_name}${ppart}2" | grep -c crypt_root)" == 0 ]; then
+			# Increment luks device name sequence
+			luks_dev="${cfg_scadrial_device_luks}$(cd /dev/mapper/ && find . -maxdepth 1 -name 'crypt_root*' | wc -l)"
+
+			# Open luks device with passphrase parameter (accounting for any dollar signs)
+			if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${luks_dev}"; then
+				err "Luks Unlock Failed"
+			else
+				echo "Luks Unlocked"
+			fi
+		fi 
+	fi
+
+
 }
 
 media_part() {
-	if [ "$(< /proc/partitions grep "${cfg_scadrial_device_name}" | awk '{print $4}' | grep -c p)" == "0" ]; then
+	# shellcheck disable=SC2001
+	dname="$(echo "${cfg_scadrial_device_name}" | sed 's|/dev/||')"
+
+	# quark or bug?: give the drive some time to "wake-up" before actually checking partitions
+	lsblk -ai > /dev/null && sleep 2
+
+	# shellcheck disable=SC2086
+	if [ "$(lsblk -aio KNAME | awk -v avar="${dname}" '$0 ~ avar { print $1 }' | sed "s/.*${dname}//" | grep -c p)" == "0" ]; then
 		ppart=""
 	else
 		ppart="p"
@@ -153,43 +181,45 @@ media_mount() {
 	#----------------------------------------------------------------------------
 	suds "rm -rf ${cfg_scadrial_chroot_path}"
 	suds "mkdir -p ${cfg_scadrial_chroot_path}"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@      /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@      /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}"
 	suds "mkdir -p ${cfg_scadrial_chroot_path}/boot"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@boot  /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/boot"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@boot  /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/boot"
 	suds "mkdir -p ${cfg_scadrial_chroot_path}/{boot/efi,home,opt/mistborn_volumes,var}"
 	suds "mount ${cfg_scadrial_device_name}${ppart}1 ${cfg_scadrial_chroot_path}/boot/efi"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/home"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@data  /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/opt/mistborn_volumes"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@var   /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/var"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/home"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@data  /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/opt/mistborn_volumes"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@var   /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var"
 	suds "mkdir -p ${cfg_scadrial_chroot_path}/{var/log,var/tmp}"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@log   /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/var/log"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@log   /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var/log"
 	suds "mkdir -p ${cfg_scadrial_chroot_path}/var/log/audit"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/var/log/audit"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   /dev/mapper/crypt_root ${cfg_scadrial_chroot_path}/var/tmp"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var/log/audit"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var/tmp"
 }
 
 media_reset() {
-  # shellcheck disable=SC2154
-  while read -r p; do
-    # Check if droot path
-    if [ "${p}" == "${cfg_scadrial_chroot_path}" ]; then
-      # unmount binds
-      for b in dev dev/pts proc sys; do
-        # suds "mount --make-rslave $cfg_scadrial_chroot_path/$b"
-        suds "umount -R $cfg_scadrial_chroot_path/$b"
-      done
+	# shellcheck disable=SC2154
+	while read -r p; do
+		# Check if droot path
+		if [ "${p}" == "${cfg_scadrial_chroot_path}" ]; then
+			# unmount binds
+			for b in dev dev/pts proc sys; do
+				# suds "mount --make-rslave $cfg_scadrial_chroot_path/$b"
+				suds "umount -R $cfg_scadrial_chroot_path/$b"
+			done
 
-      # unmount droot partition
-      suds "umount ${p}"
+			# unmount droot partition
+			suds "umount ${p}"
 
-      # close encrypted device
-      suds "cryptsetup luksClose ${cfg_scadrial_device_luks}"
-      break
-    fi
+			# close encrypted device
+			media_part
+			luks_dev="crypt_root$(lsblk "${cfg_scadrial_device_name}${ppart}2" | awk '/crypt_root/ {print $1}' | sed 's/.*crypt_root//')"
+			suds "cryptsetup luksClose ${luks_dev}"
+			break
+		fi
 
-    # Unmount sub partitions
-    suds "umount ${p}"
-  done < <(df --output=target | grep "${cfg_scadrial_chroot_path}" | tac)
+		# Unmount sub partitions
+		suds "umount ${p}"
+	done < <(df --output=target | grep "${cfg_scadrial_chroot_path}" | tac)
 }
 
 media_setup() {
@@ -224,15 +254,15 @@ media_setup() {
 	    --hash sha512 --use-random luksFormat ${cfg_scadrial_device_name}${ppart}2 -"
 	
 	# shellcheck disable=SC2086
-	open_luks $passphrase
+	open_luks "$passphrase"
 
 	#----------------------------------------------------------------------------
 	log "Create filesystems"
 	suds "mkfs.vfat -vF32 ${cfg_scadrial_device_name}${ppart}1"
-	suds "mkfs.btrfs -L crypt_root /dev/mapper/${cfg_scadrial_device_luks}"
+	suds "mkfs.btrfs -L ${luks_dev} /dev/mapper/${luks_dev}"
 
 	suds "rm -rf ${cfg_scadrial_device_pool} && mkdir ${cfg_scadrial_device_pool}"
-	suds "mount -t btrfs -o ${cfg_scadrial_device_optn} /dev/mapper/crypt_root ${cfg_scadrial_device_pool}"
+	suds "mount -t btrfs -o ${cfg_scadrial_device_optn} /dev/mapper/${luks_dev} ${cfg_scadrial_device_pool}"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@boot"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@home"
@@ -295,15 +325,16 @@ script_setup() {
 	log "Configure partitions"
 	#----------------------------------------------------------------------------
 	media_part
+	luks_dev="crypt_root$(lsblk ${cfg_scadrial_device_name}${ppart}2 | awk '/crypt_root/ {print $1}' | sed 's/.*crypt_root//')"
 	pluks="$(blkid -s PARTUUID -o value ${cfg_scadrial_device_name}${ppart}2)"
 
 	# Setup the device UUID that contains our luks volume
 	echo "# <target name>	<source device>		<key file>	<options>" > /etc/crypttab
-	echo "$cfg_scadrial_device_luks PARTUUID=$pluks none luks,discard" >> /etc/crypttab
+	echo "$luks_dev PARTUUID=$pluks none luks,discard" >> /etc/crypttab
 
 	# Setup the partitions
 	eboot="$(blkid -s UUID -o value ${cfg_scadrial_device_name}${ppart}1)"
-	croot="$(blkid -s UUID -o value /dev/mapper/$cfg_scadrial_device_luks)"
+	croot="$(blkid -s UUID -o value /dev/mapper/$luks_dev)"
 
 	cat <<- EOF | tee /etc/fstab
 	UUID=$croot  /                     btrfs   rw,${cfg_scadrial_device_optn},subvol=@                           0 0
@@ -336,7 +367,7 @@ script_setup() {
 
 	apt-get install -y --no-install-recommends "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs \
 	git ssh pciutils lvm2 iw hostapd gdisk btrfs-progs debootstrap parted fwupd net-tools bridge-utils iproute2 iptables \
-	isc-dhcp-server ca-certificates figlet
+	isc-dhcp-server ca-certificates figlet dosfstools
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
@@ -360,7 +391,7 @@ script_setup() {
 	title   Ubuntu
 	linux   /ubuntu/vmlinuz
 	initrd  /ubuntu/initrd.img
-	options cryptdevice=PARTUUID=${pluks}:${cfg_scadrial_device_luks}:allow-discards root=/dev/mapper/${cfg_scadrial_device_luks} rootflags=subvol=@ rd.luks.options=discard rw
+	options cryptdevice=PARTUUID=${pluks}:${luks_dev}:allow-discards root=/dev/mapper/${luks_dev} rootflags=subvol=@ rd.luks.options=discard rw
 	EOF
 
 	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
