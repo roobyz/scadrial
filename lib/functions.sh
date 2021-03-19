@@ -162,7 +162,7 @@ media_part() {
 	# shellcheck disable=SC2001
 	dname="$(echo "${cfg_scadrial_device_name}" | sed 's|/dev/||')"
 
-	# quark or bug?: give the drive some time to "wake-up" before actually checking partitions
+	# quirk or bug?: give the drive some time to "wake-up" before actually checking partitions
 	lsblk -ai > /dev/null && sleep 2
 
 	# shellcheck disable=SC2086
