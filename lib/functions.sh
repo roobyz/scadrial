@@ -16,13 +16,14 @@ shelp() {
     - applies security enhancements
     - installs mistborn personal virtual private cloud platform
 
-    optional flags:
+    required flags:
         install                     Complete setup on unformatted media
-        force                       Force complete setup on formatted media
         unmount	                    Unmount media
         debug                       Mount successfully formatted media
         repair                      Mount successfully formatted media and continue with setup
         h, help                     Print this help text
+    
+    optional value:                 Password/Passphrase as desired
     "
 }
 
@@ -162,7 +163,7 @@ media_part() {
 	# shellcheck disable=SC2001
 	dname="$(echo "${cfg_scadrial_device_name}" | sed 's|/dev/||')"
 
-	# quirk or bug?: give the drive some time to "wake-up" before actually checking partitions
+	# quirk or bug?: give the drive some time to "wake-up" before actually checking partitions in the following step
 	lsblk -ai > /dev/null && sleep 2
 
 	# shellcheck disable=SC2086
@@ -194,6 +195,7 @@ media_mount() {
 	suds "mkdir -p ${cfg_scadrial_chroot_path}/var/log/audit"
 	suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var/log/audit"
 	suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var/tmp"
+	echo "Done"
 }
 
 media_reset() {
@@ -284,13 +286,12 @@ media_setup() {
 }
 
 script_setup() {
-	#----------------------------------------------------------------------------
-	log "Generate final system scripts."
-	#----------------------------------------------------------------------------
+	echo "Setup scripts folder"
 	suds "mkdir -p  $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/scadrial"
 	suds "cp -r ./* $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/scadrial/"
 	suds "cp $cfg_scadrial_chroot_path/etc/skel/.* $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/ 2> /dev/null"
 
+	echo "Setup Chroot finalize script"
 	cat <<- 'SEOF' > scadrial-finalize.sh
 	#!/bin/bash
 
@@ -301,6 +302,12 @@ script_setup() {
 	source "lib/functions.sh"
 
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
+
+	# Set passphrase if provided
+	if [ -n "${1:-}" ]; then
+		# Strip any newline from assigned variable
+		passphrase="${1//$'\n'/}"
+	fi
 
 	get_pass
 	
@@ -314,8 +321,12 @@ script_setup() {
 	# Set correct ownership to home
 	suds "chown -R $cfg_scadrial_chroot_user:$cfg_scadrial_chroot_user /home/$cfg_scadrial_chroot_user"
 	
-	sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
-	sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
+	# Check whether nouveau driver should be blocked from loading
+	if [ "$cfg_scadrial_chroot_nblk" == "y" ]; then
+		sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
+		sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
+	fi
+
 	echo "$cfg_scadrial_chroot_host" > /etc/hostname
 	echo LANG=en_US.UTF-8 > /etc/locale.conf
 	ln -sf /usr/share/zoneinfo/${cfg_scadrial_chroot_tzne} /etc/localtime
@@ -380,6 +391,7 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	figlet "Scadrial: Setup systemd-boot"
 	#----------------------------------------------------------------------------
+	# Set default boot menu
 	mkdir -p /boot/efi/{ubuntu,loader/entries}
 	cat <<- EOF > /boot/efi/loader/loader.conf
 	default Ubuntu
@@ -387,19 +399,31 @@ script_setup() {
 	editor 0
 	EOF
 
+	# Set console login parameters if specified in the config file
+	if [ -z "${cfg_scadrial_chroot_stty:-}" ]; then
+		stty=""
+	else
+		# Enable virtual console and serial console
+		stty="console=tty1 console=${cfg_scadrial_chroot_stty}"
+		systemctl enable serial-getty@${cfg_scadrial_chroot_stty%%,*}.service
+	fi
+
+	# Define boot menu parameters
 	cat <<- EOF > /boot/efi/loader/entries/ubuntu.conf
 	title   Ubuntu
 	linux   /ubuntu/vmlinuz
 	initrd  /ubuntu/initrd.img
-	options cryptdevice=PARTUUID=${pluks}:${luks_dev}:allow-discards root=/dev/mapper/${luks_dev} rootflags=subvol=@ rd.luks.options=discard rw
+	options cryptdevice=PARTUUID=${pluks}:${luks_dev}:allow-discards root=/dev/mapper/${luks_dev} rootflags=subvol=@ rd.luks.options=discard ro ${stty}
 	EOF
 
+	# Copy updated kernel files to boot partition
+	update-initramfs -u -k all
 	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
 	for FILE in config initrd.img System.map vmlinuz; do
 		cp "/boot/${FILE}-${LATEST}" "/boot/efi/ubuntu/${FILE}"
 	done
 
-	update-initramfs -u -k all
+	# Install systemd-boot to our efi partition
 	bootctl install --path=/boot/efi --no-variables
 
 	#----------------------------------------------------------------------------
@@ -463,6 +487,7 @@ script_setup() {
 	echo "sudo ./system_03_hardening.sh"
 	SEOF
 
+	echo "Setup Networking script"
 	cat <<- 'SEOF' > system_01_networking.sh
 	#!/bin/bash
 
@@ -578,6 +603,7 @@ script_setup() {
 	log "Reboot to ensure DHCP is set on local interfaces."
 	SEOF
 
+	echo "Setup Mistborn install script"
 	cat <<- 'SEOF' > system_02_mistborn.sh
 	#!/bin/bash
 	source "lib/functions.sh"
@@ -597,6 +623,7 @@ script_setup() {
 	echo "sudo mistborn-cli getconf"
 	SEOF
 
+	echo "Setup Hardening script"
 	cat <<- 'SEOF' > system_03_hardening.sh
 	#!/bin/bash
 	source "lib/functions.sh"

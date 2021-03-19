@@ -29,6 +29,12 @@ for i in "${pre_reqs[@]}"; do
 	cmd_check "$i"
 done
 
+# Set passphrase if provided
+if [ -n "${2:-}" ]; then
+	# Strip any newline from assigned variable
+	passphrase="${2//$'\n'/}"
+fi
+
 # Process the specified parameters
 while test $# -gt 0; do
     case "${1}" in
@@ -38,17 +44,17 @@ while test $# -gt 0; do
         ;;
     install)
 		# Check if meadia already configured.
-		if [ "$(df --output=target | grep -c "${cfg_scadrial_chroot_path}")" == "4" ]; then
-			shelp
-			log "The media is already configured. Please use 'force' or 'repair' parameter."
-			exit 0
+		if [ ! "$(df --output=target | grep -c "${cfg_scadrial_chroot_path}")" == "0" ]; then
+			log "The media is already mounted."
+			read -p "Would you like to force install? (y/n): " -r schk
+			if [ ! "$schk" == "y" ]; then
+				echo "Exiting..."
+				exit 0
+			fi
 		fi
     	# Setup storage media/environment
 		media_setup
-        ;;
-    force)
-    	# Setup storage media/environment
-		media_setup
+		shift
         ;;
     unmount)
 		media_reset
@@ -66,6 +72,7 @@ while test $# -gt 0; do
 		media_reset
         media_mount
 		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_chroot_path/$b"; done
+		shift
         ;;
     *)
         shelp
@@ -75,6 +82,9 @@ while test $# -gt 0; do
     shift
 done
 
+#----------------------------------------------------------------------------
+log "Generate final system scripts."
+#----------------------------------------------------------------------------
 script_setup
 
 #----------------------------------------------------------------------------
@@ -82,4 +92,4 @@ log "Enter the new system and finalize our setup, by running the following:"
 #----------------------------------------------------------------------------
 echo "sudo chroot $cfg_scadrial_chroot_path /bin/bash"
 echo "cd /home/$cfg_scadrial_chroot_user/scadrial"
-echo "./scadrial-finalize.sh"
+echo "./scadrial-finalize.sh $passphrase"

@@ -17,8 +17,13 @@ scadrial:
     user: mistborn
     host: scadrial
     tzne: America/Los_Angeles
+    # Set any console login parameters for boot-time access via serial (null modem) cable
+    # https://tldp.org/HOWTO/Remote-Serial-Console-HOWTO/configure-kernel.html
+    stty: ttyS0,115200n8
     # Install cockpit (y/N)
     cpit: y
+    # Block nouveau driver
+    nblk: y
   # Parameters for networking (netplan) configuration
   # https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-consistent_network_device_naming
   # https://ubuntu.com/blog/ubuntu-bionic-netplan
