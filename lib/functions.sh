@@ -6,24 +6,27 @@ echo "$cfg_scadrial_device_name $cfg_scadrial_device_pool $cfg_scadrial_device_o
 
 # Config values for the new environment
 # shellcheck disable=SC2154
-echo "$cfg_scadrial_chroot_host $cfg_scadrial_chroot_user $cfg_scadrial_chroot_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
+echo "$cfg_scadrial_host_name $cfg_scadrial_host_user $cfg_scadrial_host_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
 
 shelp() {
     echo "
-    scadrial-setup.sh
+    Usage:
+	  sudo ./scadrial-setup.sh COMMAND [OPTION]
 
-    - configures storage media for booting Ubuntu with encrypted btrfs
-    - applies security enhancements
-    - installs mistborn personal virtual private cloud platform
+    Notes:
+    - using chroot, configures storage media for booting Ubuntu with encrypted btrfs
+	- generates scripts to:
+      - install mistborn personal virtual private cloud platform
+      - apply additional security enhancements
 
-    required flags:
+    Commands:
         install                     Complete setup on unformatted media
         unmount	                    Unmount media
         debug                       Mount successfully formatted media
         repair                      Mount successfully formatted media and continue with setup
         h, help                     Print this help text
     
-    optional value:                 Password/Passphrase as desired
+    Optional value:                 Password/Passphrase as desired
     "
 }
 
@@ -155,8 +158,6 @@ open_luks() {
 			fi
 		fi 
 	fi
-
-
 }
 
 media_part() {
@@ -164,7 +165,7 @@ media_part() {
 	dname="$(echo "${cfg_scadrial_device_name}" | sed 's|/dev/||')"
 
 	# quirk or bug?: give the drive some time to "wake-up" before actually checking partitions in the following step
-	lsblk -ai > /dev/null && sleep 2
+	lsblk -ai > /dev/null && sleep 1
 
 	# shellcheck disable=SC2086
 	if [ "$(lsblk -aio KNAME | awk -v avar="${dname}" '$0 ~ avar { print $1 }' | sed "s/.*${dname}//" | grep -c p)" == "0" ]; then
@@ -180,21 +181,21 @@ media_mount() {
 
 	log "Mount the partitions"
 	#----------------------------------------------------------------------------
-	suds "rm -rf ${cfg_scadrial_chroot_path}"
-	suds "mkdir -p ${cfg_scadrial_chroot_path}"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@      /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}"
-	suds "mkdir -p ${cfg_scadrial_chroot_path}/boot"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@boot  /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/boot"
-	suds "mkdir -p ${cfg_scadrial_chroot_path}/{boot/efi,home,opt/mistborn_volumes,var}"
-	suds "mount ${cfg_scadrial_device_name}${ppart}1 ${cfg_scadrial_chroot_path}/boot/efi"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/home"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@data  /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/opt/mistborn_volumes"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@var   /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var"
-	suds "mkdir -p ${cfg_scadrial_chroot_path}/{var/log,var/tmp}"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@log   /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var/log"
-	suds "mkdir -p ${cfg_scadrial_chroot_path}/var/log/audit"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var/log/audit"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   /dev/mapper/${luks_dev} ${cfg_scadrial_chroot_path}/var/tmp"
+	suds "rm -rf ${cfg_scadrial_host_path}"
+	suds "mkdir -p ${cfg_scadrial_host_path}"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@      /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}"
+	suds "mkdir -p ${cfg_scadrial_host_path}/boot"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@boot  /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/boot"
+	suds "mkdir -p ${cfg_scadrial_host_path}/{boot/efi,home,opt/mistborn_volumes,var}"
+	suds "mount ${cfg_scadrial_device_name}${ppart}1 ${cfg_scadrial_host_path}/boot/efi"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/home"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@data  /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/opt/mistborn_volumes"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@var   /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/var"
+	suds "mkdir -p ${cfg_scadrial_host_path}/{var/log,var/tmp}"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@log   /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/var/log"
+	suds "mkdir -p ${cfg_scadrial_host_path}/var/log/audit"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/var/log/audit"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/var/tmp"
 	echo "Done"
 }
 
@@ -202,11 +203,11 @@ media_reset() {
 	# shellcheck disable=SC2154
 	while read -r p; do
 		# Check if droot path
-		if [ "${p}" == "${cfg_scadrial_chroot_path}" ]; then
+		if [ "${p}" == "${cfg_scadrial_host_path}" ]; then
 			# unmount binds
 			for b in dev dev/pts proc sys; do
-				# suds "mount --make-rslave $cfg_scadrial_chroot_path/$b"
-				suds "umount -R $cfg_scadrial_chroot_path/$b"
+				# suds "mount --make-rslave $cfg_scadrial_host_path/$b"
+				suds "umount -R $cfg_scadrial_host_path/$b"
 			done
 
 			# unmount droot partition
@@ -221,7 +222,7 @@ media_reset() {
 
 		# Unmount sub partitions
 		suds "umount ${p}"
-	done < <(df --output=target | grep "${cfg_scadrial_chroot_path}" | tac)
+	done < <(df --output=target | grep "${cfg_scadrial_host_path}" | tac)
 }
 
 media_setup() {
@@ -281,15 +282,15 @@ media_setup() {
 	#----------------------------------------------------------------------------
 	log "Bootstrap the new system"
 	#----------------------------------------------------------------------------
-	suds "debootstrap --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_chroot_path" http://archive.ubuntu.com/ubuntu
-	for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_chroot_path/$b"; done
+	suds "debootstrap --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_host_path" http://archive.ubuntu.com/ubuntu
+	for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
 }
 
 script_setup() {
-	echo "Setup scripts folder"
-	suds "mkdir -p  $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/scadrial"
-	suds "cp -r ./* $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/scadrial/"
-	suds "cp $cfg_scadrial_chroot_path/etc/skel/.* $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/ 2> /dev/null"
+	echo "Setup Scripts folder"
+	suds "mkdir -p  $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
+	suds "cp -r ./* $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial/"
+	suds "cp $cfg_scadrial_host_path/etc/skel/.* $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/ 2> /dev/null"
 
 	echo "Setup Chroot finalize script"
 	cat <<- 'SEOF' > scadrial-finalize.sh
@@ -314,22 +315,22 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	log "Setup environment, user and access"
 	#----------------------------------------------------------------------------
-	useradd -M -s /bin/bash "$cfg_scadrial_chroot_user"
-	echo "${cfg_scadrial_chroot_user}:${passphrase}" | chpasswd
-	set_sudoer "$cfg_scadrial_chroot_user"
+	useradd -M -s /bin/bash "$cfg_scadrial_host_user"
+	echo "${cfg_scadrial_host_user}:${passphrase}" | chpasswd
+	set_sudoer "$cfg_scadrial_host_user"
 
 	# Set correct ownership to home
-	suds "chown -R $cfg_scadrial_chroot_user:$cfg_scadrial_chroot_user /home/$cfg_scadrial_chroot_user"
+	suds "chown -R $cfg_scadrial_host_user:$cfg_scadrial_host_user /home/$cfg_scadrial_host_user"
 	
 	# Check whether nouveau driver should be blocked from loading
-	if [ "$cfg_scadrial_chroot_nblk" == "y" ]; then
+	if [ "$cfg_scadrial_host_nblk" == "y" ]; then
 		sudo bash -c "echo blacklist nouveau > /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 		sudo bash -c "echo options nouveau modeset=0 >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf"
 	fi
 
-	echo "$cfg_scadrial_chroot_host" > /etc/hostname
+	echo "$cfg_scadrial_host_name" > /etc/hostname
 	echo LANG=en_US.UTF-8 > /etc/locale.conf
-	ln -sf /usr/share/zoneinfo/${cfg_scadrial_chroot_tzne} /etc/localtime
+	ln -sf /usr/share/zoneinfo/${cfg_scadrial_host_tzne} /etc/localtime
 	locale-gen en_US.UTF-8
 
 	#----------------------------------------------------------------------------
@@ -385,8 +386,8 @@ script_setup() {
 	sed -i "/UMASK=0077/d" /etc/initramfs-tools/initramfs.conf
 	echo "UMASK=0077" >> /etc/initramfs-tools/initramfs.conf
 
-	mkdir -p /home/${cfg_scadrial_chroot_user}/.ssh && touch /home/${cfg_scadrial_chroot_user}/.ssh/authorized_keys
-	chmod 700 /home/${cfg_scadrial_chroot_user}/.ssh && chmod 600 /home/${cfg_scadrial_chroot_user}/.ssh/authorized_keys
+	mkdir -p /home/${cfg_scadrial_host_user}/.ssh && touch /home/${cfg_scadrial_host_user}/.ssh/authorized_keys
+	chmod 700 /home/${cfg_scadrial_host_user}/.ssh && chmod 600 /home/${cfg_scadrial_host_user}/.ssh/authorized_keys
 
 	#----------------------------------------------------------------------------
 	figlet "Scadrial: Setup systemd-boot"
@@ -400,12 +401,17 @@ script_setup() {
 	EOF
 
 	# Set console login parameters if specified in the config file
-	if [ -z "${cfg_scadrial_chroot_stty:-}" ]; then
+	if [ -z "${cfg_scadrial_host_stty:-}" ]; then
 		stty=""
 	else
 		# Enable virtual console and serial console
-		stty="console=tty1 console=${cfg_scadrial_chroot_stty}"
-		systemctl enable serial-getty@${cfg_scadrial_chroot_stty%%,*}.service
+		if [ "${cfg_scadrial_host_tty1}" == "y" ]; then
+			vcon="console=tty1 "
+		else
+			vcon=""
+		fi
+		stty="${vcon}console=${cfg_scadrial_host_stty}"
+		systemctl enable serial-getty@${cfg_scadrial_host_stty%%,*}.service
 	fi
 
 	# Define boot menu parameters
@@ -470,7 +476,7 @@ script_setup() {
 	netplan apply
 
 	# Set correct ownership to new home folders
-	suds "chown -R $cfg_scadrial_chroot_user:$cfg_scadrial_chroot_user /home/$cfg_scadrial_chroot_user"
+	suds "chown -R $cfg_scadrial_host_user:$cfg_scadrial_host_user /home/$cfg_scadrial_host_user"
 
 	log "The initial media configuration complete. Pending steps to complete on the host."
 	echo "Exit chroot and umount our media, as follows:"
@@ -609,7 +615,7 @@ script_setup() {
 	source "lib/functions.sh"
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 	
-	export MISTBORN_INSTALL_COCKPIT="${cfg_scadrial_chroot_cpit}"
+	export MISTBORN_INSTALL_COCKPIT="${cfg_scadrial_host_cpit}"
 
 	#----------------------------------------------------------------------------
 	log "Install Mistborn..."
@@ -656,5 +662,5 @@ script_setup() {
 
 	# Move the second step script to our media device
 	sudo chmod +x scadrial-finalize.sh system_*.sh
-	suds "mv scadrial-finalize.sh system_*.sh $cfg_scadrial_chroot_path/home/$cfg_scadrial_chroot_user/scadrial"
+	suds "mv scadrial-finalize.sh system_*.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 }

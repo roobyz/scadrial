@@ -12,13 +12,15 @@ scadrial:
     optn: ssd,noatime,compress=zstd,commit=120
     luks: crypt_root
   # Parameters for chroot environment
-  chroot:
-    path: /mnt/debootpath
+  host:
+    name: scadrial
     user: mistborn
-    host: scadrial
+    path: /mnt/debootpath
     tzne: America/Los_Angeles
     # Set any console login parameters for boot-time access via serial (null modem) cable
     # https://tldp.org/HOWTO/Remote-Serial-Console-HOWTO/configure-kernel.html
+    # Note: when multiple consoles are listed, although output is sent to all consoles, input is taken from the last listed console
+    tty1: y
     stty: ttyS0,115200n8
     # Install cockpit (y/N)
     cpit: y
@@ -41,4 +43,5 @@ scadrial:
       addrs: 10.16.45.1/24
       # replace passphrase with something unique
       pass: 3fiWk9IoVYJmNm4unYoHjizWPuf8WsLv
+      # rename wireless access point as desired
       ssid: Elend Venture

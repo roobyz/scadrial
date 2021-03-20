@@ -22,7 +22,7 @@ eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 # exit
 
 # shellcheck disable=SC2154
-echo "$cfg_scadrial_chroot_user $cfg_scadrial_chroot_path" > /dev/null
+echo "$cfg_scadrial_host_user $cfg_scadrial_host_path" > /dev/null
 
 declare -a pre_reqs=("sudo" "cryptsetup" "ssh-keygen" "sgdisk" "partprobe" "debootstrap" "wipefs")
 for i in "${pre_reqs[@]}"; do
@@ -44,7 +44,7 @@ while test $# -gt 0; do
         ;;
     install)
 		# Check if meadia already configured.
-		if [ ! "$(df --output=target | grep -c "${cfg_scadrial_chroot_path}")" == "0" ]; then
+		if [ ! "$(df --output=target | grep -c "${cfg_scadrial_host_path}")" == "0" ]; then
 			log "The media is already mounted."
 			read -p "Would you like to force install? (y/n): " -r schk
 			if [ ! "$schk" == "y" ]; then
@@ -63,15 +63,15 @@ while test $# -gt 0; do
     debug)
 		media_reset
         media_mount
-		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_chroot_path/$b"; done
+		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
 		log "To enter the new system for debugging, type the following:"
-		echo "sudo chroot $cfg_scadrial_chroot_path /bin/bash" && echo
+		echo "sudo chroot $cfg_scadrial_host_path /bin/bash" && echo
 		exit 0
         ;;
     repair)
 		media_reset
         media_mount
-		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_chroot_path/$b"; done
+		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
 		shift
         ;;
     *)
@@ -90,6 +90,6 @@ script_setup
 #----------------------------------------------------------------------------
 log "Enter the new system and finalize our setup, by running the following:"
 #----------------------------------------------------------------------------
-echo "sudo chroot $cfg_scadrial_chroot_path /bin/bash"
-echo "cd /home/$cfg_scadrial_chroot_user/scadrial"
+echo "sudo chroot $cfg_scadrial_host_path /bin/bash"
+echo "cd /home/$cfg_scadrial_host_user/scadrial"
 echo "./scadrial-finalize.sh $passphrase"
