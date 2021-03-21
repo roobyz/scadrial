@@ -396,7 +396,7 @@ script_setup() {
 	mkdir -p /boot/efi/{ubuntu,loader/entries}
 	cat <<- EOF > /boot/efi/loader/loader.conf
 	default Ubuntu
-	timeout 5
+	timeout 3
 	editor 0
 	EOF
 
