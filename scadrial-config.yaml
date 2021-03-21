@@ -17,11 +17,15 @@ scadrial:
     user: mistborn
     path: /mnt/debootpath
     tzne: America/Los_Angeles
-    # Set any console login parameters for boot-time access via serial (null modem) cable
+    # Set console login parameters for boot-time access via serial (null modem) cable or virtual console
     # https://tldp.org/HOWTO/Remote-Serial-Console-HOWTO/configure-kernel.html
-    # Note: when multiple consoles are listed, although output is sent to all consoles, input is taken from the last listed console
-    tty1: y
-    stty: ttyS0,115200n8
+    # Note: When enabling multiple consoles, although output is sent to all consoles, input is only taken from the last enabled console.
+    #       In this case, stty is the last enabled conosle. Setting vtty to 'y' will enable tty1 for debugging stty access.
+    cons:
+      # Change to 'y' if you need a virtual console (aka connect via keyboard/monitor)
+      vtty: n
+      # Comment out below if you do not need access vi serial (null modem) cable
+      stty: ttyS0,115200n8
     # Install cockpit (y/N)
     cpit: y
     # Block nouveau driver

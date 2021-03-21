@@ -401,17 +401,18 @@ script_setup() {
 	EOF
 
 	# Set console login parameters if specified in the config file
-	if [ -z "${cfg_scadrial_host_stty:-}" ]; then
+	if [ -z "${cfg_scadrial_host_cons_stty:-}" ]; then
 		stty=""
 	else
 		# Enable virtual console and serial console
-		if [ "${cfg_scadrial_host_tty1}" == "y" ]; then
-			vcon="console=tty1 "
+		if [ "${cfg_scadrial_host_cons_vtty}" == "y" ]; then
+			vtty="console=tty1 "
 		else
-			vcon=""
+			vtty=""
+			systemctl disable getty@tty1.service
 		fi
-		stty="${vcon}console=${cfg_scadrial_host_stty}"
-		systemctl enable serial-getty@${cfg_scadrial_host_stty%%,*}.service
+		stty="${vtty}console=${cfg_scadrial_host_cons_stty}"
+		systemctl enable serial-getty@${cfg_scadrial_host_cons_stty%%,*}.service
 	fi
 
 	# Define boot menu parameters
