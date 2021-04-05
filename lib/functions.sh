@@ -616,6 +616,7 @@ script_setup() {
 	source "lib/functions.sh"
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 	
+	export MISTBORN_DEFAULT_PASSWORD="${passphrase//$/\\$}"
 	export MISTBORN_INSTALL_COCKPIT="${cfg_scadrial_host_cpit}"
 
 	#----------------------------------------------------------------------------
