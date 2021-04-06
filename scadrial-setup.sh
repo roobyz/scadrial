@@ -10,9 +10,9 @@ export DEBIAN_FRONTEND=noninteractive
 # shellcheck disable=SC1091
 source "lib/functions.sh"
 # shellcheck disable=SC1091
-source "lib/media_setup.sh"
+source "lib/setup_media.sh"
 # shellcheck disable=SC1091
-source "lib/script_setup.sh"
+source "lib/setup_scripts.sh"
 
 # Exit if no parameters are specified
 if test $# -lt 1; then
