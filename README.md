@@ -14,7 +14,7 @@ Port Forwarding:
 * One option is to forward all incoming UDP traffic on your internet facing NIC to your Mistborn IP address.
 * Forward udp packets from wap and lan interfaces to scadrial server:
 
-> iptables -t nat -A PREROUTING -i wap -p udp -j DNAT --to-destination 172.26.75.12
+> iptables -t nat -A PREROUTING -i wap -p udp -j DNAT --to-destination 172.26.75.12  
 iptables -t nat -A PREROUTING -i lan -p udp -j DNAT --to-destination 172.26.75.12
 
 Hardening:
