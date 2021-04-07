@@ -8,6 +8,53 @@ echo "$cfg_scadrial_device_name $cfg_scadrial_device_pool $cfg_scadrial_device_o
 # shellcheck disable=SC2154
 echo "$cfg_scadrial_host_name $cfg_scadrial_host_user $cfg_scadrial_host_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
 
+media_file() {
+	echo "Setup loop sparse file (${cfg_scadrial_device_loop_file})"
+
+	# Specify parent folder of the working folder
+	lfile="$(dirname "$(pwd)")/${cfg_scadrial_device_loop_file}"
+	touch "${lfile}"
+	truncate --size "${cfg_scadrial_device_loop_size}" "${lfile}"
+	losetup "${cfg_scadrial_device_name}" "${lfile}"
+}
+
+open_luks() {
+	log "Unlock luks volume"
+	# Setup loop sparse file is specified.
+	if [ "$cfg_scadrial_device_loop_type" == "y" ]; then
+		media_file
+	fi
+
+	suds "partprobe ${cfg_scadrial_device_name}"
+	media_part
+
+	# Check whether the same base-name is used
+	if [ "$(cd /dev/mapper/ && find . -maxdepth 1 -name 'crypt_root*' | wc -l)" == "0" ]; then
+		# Name our new device
+		luks_dev="${cfg_scadrial_device_luks}0"
+
+		# Open luks device with passphrase parameter
+		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${luks_dev}"; then
+			err "Luks Unlock Failed"
+		else
+			echo "Luks Unlocked"
+		fi
+	else
+		# Check name if the target luks device is already open
+		if [ "$(lsblk "${cfg_scadrial_device_name}${ppart}2" | grep -c crypt_root)" == 0 ]; then
+			# Increment luks device name sequence
+			luks_dev="${cfg_scadrial_device_luks}$(cd /dev/mapper/ && find . -maxdepth 1 -name 'crypt_root*' | wc -l)"
+
+			# Open luks device with passphrase parameter (accounting for any dollar signs)
+			if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${luks_dev}"; then
+				err "Luks Unlock Failed"
+			else
+				echo "Luks Unlocked"
+			fi
+		fi 
+	fi
+}
+
 media_part() {
 	# shellcheck disable=SC2001
 	dname="$(echo "${cfg_scadrial_device_name}" | sed 's|/dev/||')"
@@ -65,6 +112,10 @@ media_reset() {
 			media_part
 			luks_dev="crypt_root$(lsblk "${cfg_scadrial_device_name}${ppart}2" | awk '/crypt_root/ {print $1}' | sed 's/.*crypt_root//')"
 			suds "cryptsetup luksClose ${luks_dev}"
+
+			if [ "$cfg_scadrial_device_loop_type" == "y" ]; then
+				losetup -d "${cfg_scadrial_device_name}"
+			fi
 			break
 		fi
 
@@ -83,9 +134,15 @@ media_setup() {
 	#----------------------------------------------------------------------------
 	log "Setup storage media"
 	#----------------------------------------------------------------------------
-
+	# Unmount binds and media, close crypt, and then remount the media
 	media_reset
 
+	# Setup loop sparse file is specified.
+	if [ "$cfg_scadrial_device_loop_type" == "y" ]; then
+		media_file
+	fi
+
+	# partitions our media
 	suds "sgdisk -og ${cfg_scadrial_device_name} \
 	--new=1::+260M  --typecode=1:EF00 --change-name=1:'EFI partition' \
 	--new=2::0      --typecode=2:8304 --change-name=2:'Linux partition'"
@@ -113,6 +170,7 @@ media_setup() {
 	suds "mkfs.btrfs -L ${luks_dev} /dev/mapper/${luks_dev}"
 
 	suds "rm -rf ${cfg_scadrial_device_pool} && mkdir ${cfg_scadrial_device_pool}"
+
 	suds "mount -t btrfs -o ${cfg_scadrial_device_optn} /dev/mapper/${luks_dev} ${cfg_scadrial_device_pool}"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@boot"
@@ -126,10 +184,11 @@ media_setup() {
 	suds "umount ${cfg_scadrial_device_pool}"
 
 	media_mount
-
+	
 	#----------------------------------------------------------------------------
 	log "Bootstrap the new system"
 	#----------------------------------------------------------------------------
 	suds "debootstrap --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_host_path" http://archive.ubuntu.com/ubuntu
 	for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
+
 }

@@ -128,34 +128,3 @@ get_pass() {
 		echo
 	fi
 }
-
-open_luks() {
-	log "Unlock luks volume"
-	media_part
-
-	# Check whether the same base-name is used
-	if [ "$(cd /dev/mapper/ && find . -maxdepth 1 -name 'crypt_root*' | wc -l)" == "0" ]; then
-		# Name our new device
-		luks_dev="${cfg_scadrial_device_luks}0"
-
-		# Open luks device with passphrase parameter
-		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${luks_dev}"; then
-			err "Luks Unlock Failed"
-		else
-			echo "Luks Unlocked"
-		fi
-	else
-		# Check name if the target luks device is already open
-		if [ "$(lsblk "${cfg_scadrial_device_name}${ppart}2" | grep -c crypt_root)" == 0 ]; then
-			# Increment luks device name sequence
-			luks_dev="${cfg_scadrial_device_luks}$(cd /dev/mapper/ && find . -maxdepth 1 -name 'crypt_root*' | wc -l)"
-
-			# Open luks device with passphrase parameter (accounting for any dollar signs)
-			if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${luks_dev}"; then
-				err "Luks Unlock Failed"
-			else
-				echo "Luks Unlocked"
-			fi
-		fi 
-	fi
-}
