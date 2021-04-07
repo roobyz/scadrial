@@ -9,10 +9,10 @@ echo "$cfg_scadrial_device_name $cfg_scadrial_device_pool $cfg_scadrial_device_o
 echo "$cfg_scadrial_host_name $cfg_scadrial_host_user $cfg_scadrial_host_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
 
 media_file() {
-	echo "Setup loop sparse file (${cfg_scadrial_device_loop_file})"
-
 	# Specify parent folder of the working folder
 	lfile="$(dirname "$(pwd)")/${cfg_scadrial_device_loop_file}"
+	echo "Setup sparse loop device file (${lfile})"
+
 	touch "${lfile}"
 	truncate --size "${cfg_scadrial_device_loop_size}" "${lfile}"
 	losetup "${cfg_scadrial_device_name}" "${lfile}"
