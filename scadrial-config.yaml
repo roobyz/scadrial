@@ -8,12 +8,12 @@ scadrial:
   # Parameters for destination media
   device:
     # Specify loop devices settings
+    # Note: if loop set to "y" ensure cons/vtty set to "y" and cons/stty commented out
     loop: y
       file: scadrial.img
       size: 8G
     # Specify device name (i.e. /dev/sda or /dev/loop0)
     name: /dev/loop0
-    # name: /dev/sda
     pool: /mnt/btrfs_pool
     optn: ssd,noatime,compress=zstd,commit=120
     luks: crypt_root
@@ -29,9 +29,9 @@ scadrial:
     #       In this case, stty is the last enabled conosle. Setting vtty to 'y' will enable tty1 for debugging stty access.
     cons:
       # Change to 'y' if you need a virtual console (aka connect via keyboard/monitor)
-      vtty: n
+      vtty: y
       # Comment out below if you do not need access vi serial (null modem) cable
-      stty: ttyS0,115200n8
+      # stty: ttyS0,115200n8
     # Install cockpit (y/N)
     cpit: y
     # Block nouveau driver

@@ -34,7 +34,38 @@ Primary Scadrial use-case: homelab setup of a high resource Mistborn installatio
 
 ## Installation
 
-### Part One: Setup Scadrial Boot Device
+### Part One: Configuration
+
+All the key configuration settings are update on our yaml file (_scadrial-config.yaml_). It is important to update this for our specific use case before proceeding to the next step. The script will read the yaml and create variables that will be used for each of the following steps. Not applicable variables should be left blank. The following table illustrates how the variables might be updated for three use-cases:
+
+variable | USB/Serial Console | USB/Monitor | Image/Virtual Machine
+----- | ----- | ----- | -----
+[cfg_scadrial_dist_name](a "Debian-based Distribiton Name") | focal | focal | focal 
+[cfg_scadrial_dist_vers](a "Distribution Version Number") | 20.04 | 20.04 | 20.04
+[cfg_scadrial_device_loop](a "Loop Device Desired. A file that acts as a block-based device. (i.e. ISO or IMG file)") | n | n | y
+[cfg_scadrial_device_loop_file](a "Loop File Name") | | | scadrial.img
+[cfg_scadrial_device_loop_size](a "Loop File Size") | | | 8G
+[cfg_scadrial_device_name](a "Device Name") | /dev/sda | /dev/sda | /dev/loop0
+[cfg_scadrial_device_pool](a "Mount path for btrfs pool setup") | /mnt/btrfs_pool | /mnt/btrfs_pool | /mnt/btrfs_pool
+[cfg_scadrial_device_optn](a "fstab parameters for btrfs filesystem") | compress=zstd | compress=zstd | compress=zstd
+[cfg_scadrial_device_luks](a "Name of luks crypt device. Sequence number will be added to avoid duplicate values") | crypt_root | crypt_root | crypt_root
+[cfg_scadrial_host_name](a "Hostname for the 'machine'") | scadrial | scadrial | scadrial
+[cfg_scadrial_host_user](a "user for our machine. Note mistborn requires a user name 'mistborn'") | mistborn | mistborn | mistborn
+[cfg_scadrial_host_path](a "Mount path for our chroot jail") | /mnt/debootpath | /mnt/debootpath | /mnt/debootpath
+[cfg_scadrial_host_tzne](a "Our local time zone") | America/Los_Angeles | America/Los_Angeles | America/Los_Angeles
+[cfg_scadrial_host_cons_vtty](a "Virtual Console desired") | n | y | y
+[cfg_scadrial_host_cons_stty](a "Serial Console settings. Serial console will not be configured if left blank.") | ttyS0,115200n8 | |
+[cfg_scadrial_host_cpit](a "Mistborn Cockpit installation desired") | y | y | y
+[cfg_scadrial_host_nblk](a "nouveau driver should be blocked") | y | y | y
+[cfg_scadrial_network_wan_iface](a "Interface name for WAN device (i.e internet access). Must use the name from our machine.") | eno1 | eno1 | eno1
+[cfg_scadrial_network_lan_iface](a "Interface name for LAN device (i.e. local access). Must use the name from our machine") | enp4s0 | enp4s0 | enp4s0
+[cfg_scadrial_network_lan_addrs](a "DHCPv4 address range for our LAN") | 10.16.35.1/24 | 10.16.35.1/24 | 10.16.35.1/24
+[cfg_scadrial_network_wap_iface](a "Interface name for our Wireless Access Point. Must use the name from our machine") | wlp2s0 | wlp2s0 | wlp2s0
+[cfg_scadrial_network_wap_addrs](a "DHCPv4 address range for our WAP") | 10.16.45.1/24 | 10.16.45.1/24 | 10.16.45.1/24
+[cfg_scadrial_network_wap_pass](a "WAP passphrase") | mypass_1234 | mypass_1234 | mypass_1234
+[cfg_scadrial_network_wap_ssid](a "WAP SSID Name") | my_wifi_spot | my_wifi_spot | my_wifi_spot
+
+### Part Two: Setup Scadrial Boot Media
 
 First, we insert our new install media (e.g. a USB stick) or configure a loop device. Note that this script will completely wipe our media. Ensure that any partitions are not mounted, and then run:
 
@@ -44,17 +75,19 @@ sudo ./scadrial-setup.sh install [password]
 
 The [password] is an optional command line parameter, however if not provided the script will ask you to enter a password on execution.
 
-### Part Two: Install on Our "Server"
+### Part Three: Install Scadrial on Our "Machine"
 
-Once our Scadrial boot media is configured, we can install Mistborn on our server. This can be a physical or virtual machine. If we would like to install on a virtual machine, then the boot media created in step one should be a disk image created with a loop device.
+Once our Scadrial boot media is configured, we can install Scadrial and/or Mistborn on our server. This can be a physical or virtual machine. If we would like to install on a virtual machine, then the boot media created in step one should be a disk image created with a loop device.
 
-After booting Scadrial on our new host machine, login as the 'mistborn' user and run the following:
+After booting Scadrial on our new host machine, login as the 'mistborn' user and run the following if you would like to install on our existing media:
 
 ``` bash
 cd scadrial
 sudo ./system_01_networking.sh
 sudo ./system_02_mistborn.sh
 ```
+
+If we would like to install Scadrial on a new disk drive (i.e. ssd, virtual disk, etc.). Then we can adjust our config yaml as needed and repeat Part Two step above on our host system (i.e. physical or virtual machine).
 
 ## Internet Access
 
