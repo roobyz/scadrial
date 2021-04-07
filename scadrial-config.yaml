@@ -8,10 +8,9 @@ scadrial:
   # Parameters for destination media
   device:
     # Specify loop devices settings
-    loop: 
-      type: y
+    loop: y
       file: scadrial.img
-      size: 16G
+      size: 8G
     # Specify device name (i.e. /dev/sda or /dev/loop0)
     name: /dev/loop0
     # name: /dev/sda
