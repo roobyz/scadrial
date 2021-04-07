@@ -7,7 +7,14 @@ scadrial:
     vers: 20.04
   # Parameters for destination media
   device:
-    name: /dev/sda
+    # Specify loop devices settings
+    loop: 
+      type: y
+      file: scadrial.img
+      size: 16G
+    # Specify device name (i.e. /dev/sda or /dev/loop0)
+    name: /dev/loop0
+    # name: /dev/sda
     pool: /mnt/btrfs_pool
     optn: ssd,noatime,compress=zstd,commit=120
     luks: crypt_root
