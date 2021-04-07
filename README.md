@@ -34,13 +34,27 @@ Primary Scadrial use-case: homelab setup of a high resource Mistborn installatio
 
 ## Installation
 
-First, we insert our new install media (e.g. a USB stick). Note that this script will completely wipe our media. Ensure that any partitions are not mounted, and then run:
+### Part One: Setup Scadrial Boot Device
+
+First, we insert our new install media (e.g. a USB stick) or configure a loop device. Note that this script will completely wipe our media. Ensure that any partitions are not mounted, and then run:
 
 ``` bash
 sudo ./scadrial-setup.sh install [password]
 ```
 
-Note that the [password] is optional and if not provided the script will ask you to enter a password on execution.
+The [password] is an optional command line parameter, however if not provided the script will ask you to enter a password on execution.
+
+### Part Two: Install on Our "Server"
+
+Once our Scadrial boot media is configured, we can install Mistborn on our server. This can be a physical or virtual machine. If we would like to install on a virtual machine, then the boot media created in step one should be a disk image created with a loop device.
+
+After booting Scadrial on our new host machine, login as the 'mistborn' user and run the following:
+
+``` bash
+cd scadrial
+sudo ./system_01_networking.sh
+sudo ./system_02_mistborn.sh
+```
 
 ## Internet Access
 
@@ -62,13 +76,13 @@ sudo iptables -t nat -A PREROUTING -i lan -p udp -j DNAT --to-destination 10.10.
 
 Although this is still a work in progress, it functions in my specified use-case. Additional work pending to make it a more robust general solution.
 
-Todo:
-* _loopdevice_: installation into loop image for use in a virtual machine
+### Todo:
+* ~~_loopdevice_: Update scripts to setup and control loop devices images for use on virtual machines~~ **_done_**
 * _backup_: save existing installation settings
 * _restore_: restore settings after replacing an existing installation 
 * _hardening_: once functioning as desired, apply some [hardening][01] settings
 
-References:
+### References:
 * [BATS][02] Security Testing Framework
 * [Wireguard][03] Introduction
 
