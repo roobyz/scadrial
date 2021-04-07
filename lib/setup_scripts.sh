@@ -24,6 +24,10 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	# shellcheck disable=SC1091
 	source "lib/functions.sh"
+	# shellcheck disable=SC1091
+	source "lib/setup_media.sh"
+	# shellcheck disable=SC1091
+	source "lib/setup_scripts.sh"
 
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
@@ -221,7 +225,12 @@ script_setup() {
 	cat <<- 'SEOF' > system_01_networking.sh
 	#!/bin/bash
 
+	# shellcheck disable=SC1091
 	source "lib/functions.sh"
+	# shellcheck disable=SC1091
+	source "lib/setup_media.sh"
+	# shellcheck disable=SC1091
+	source "lib/setup_scripts.sh"
 
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
@@ -336,7 +345,14 @@ script_setup() {
 	echo "Setup Mistborn install script"
 	cat <<- 'SEOF' > system_02_mistborn.sh
 	#!/bin/bash
+	
+	# shellcheck disable=SC1091
 	source "lib/functions.sh"
+	# shellcheck disable=SC1091
+	source "lib/setup_media.sh"
+	# shellcheck disable=SC1091
+	source "lib/setup_scripts.sh"
+
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 	
 	export MISTBORN_DEFAULT_PASSWORD="${passphrase//$/\\$}"
@@ -357,7 +373,14 @@ script_setup() {
 	echo "Setup Hardening script"
 	cat <<- 'SEOF' > system_03_hardening.sh
 	#!/bin/bash
+
+	# shellcheck disable=SC1091
 	source "lib/functions.sh"
+	# shellcheck disable=SC1091
+	source "lib/setup_media.sh"
+	# shellcheck disable=SC1091
+	source "lib/setup_scripts.sh"
+
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
 	#----------------------------------------------------------------------------
