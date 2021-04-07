@@ -63,6 +63,7 @@ sudo iptables -t nat -A PREROUTING -i lan -p udp -j DNAT --to-destination 10.10.
 Although this is still a work in progress, it functions in my specified use-case. Additional work pending to make it a more robust general solution.
 
 Todo:
+* _loopdevice_: installation into loop image for use in a virtual machine
 * _backup_: save existing installation settings
 * _restore_: restore settings after replacing an existing installation 
 * _hardening_: once functioning as desired, apply some [hardening][01] settings
