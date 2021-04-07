@@ -9,22 +9,25 @@ echo "$cfg_scadrial_device_name $cfg_scadrial_device_pool $cfg_scadrial_device_o
 echo "$cfg_scadrial_host_name $cfg_scadrial_host_user $cfg_scadrial_host_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
 
 media_file() {
-	# Specify parent folder of the working folder
-	lfile="$(dirname "$(pwd)")/${cfg_scadrial_device_loop_file}"
-	echo "Setup sparse loop device file (${lfile})"
+	if [ "$(lsblk | grep -c "${cfg_scadrial_device_name//\/dev\//}")" == 0 ]; then
+		# Specify parent folder of the working folder
+		lfile="$(dirname "$(pwd)")/${cfg_scadrial_device_loop_file}"
+		echo "Setup sparse loop device file (${lfile})"
 
-	touch "${lfile}"
-	truncate --size "${cfg_scadrial_device_loop_size}" "${lfile}"
-	losetup "${cfg_scadrial_device_name}" "${lfile}"
+		touch "${lfile}"
+		truncate --size "${cfg_scadrial_device_loop_size}" "${lfile}"
+		losetup "${cfg_scadrial_device_name}" "${lfile}"
+	fi
 }
 
 open_luks() {
-	log "Unlock luks volume"
+	log "Ensure luks volume unlocked"
 	# Setup loop sparse file is specified.
-	if [ "$cfg_scadrial_device_loop_type" == "y" ]; then
+	if [ "$cfg_scadrial_device_loop" == "y" ]; then
 		media_file
 	fi
 
+	echo "partprobe"
 	suds "partprobe ${cfg_scadrial_device_name}"
 	media_part
 
@@ -113,7 +116,7 @@ media_reset() {
 			luks_dev="crypt_root$(lsblk "${cfg_scadrial_device_name}${ppart}2" | awk '/crypt_root/ {print $1}' | sed 's/.*crypt_root//')"
 			suds "cryptsetup luksClose ${luks_dev}"
 
-			if [ "$cfg_scadrial_device_loop_type" == "y" ]; then
+			if [ "$cfg_scadrial_device_loop" == "y" ]; then
 				losetup -d "${cfg_scadrial_device_name}"
 			fi
 			break
@@ -138,7 +141,7 @@ media_setup() {
 	media_reset
 
 	# Setup loop sparse file is specified.
-	if [ "$cfg_scadrial_device_loop_type" == "y" ]; then
+	if [ "$cfg_scadrial_device_loop" == "y" ]; then
 		media_file
 	fi
 
