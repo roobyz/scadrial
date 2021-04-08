@@ -46,7 +46,7 @@ Primary Scadrial use-case:
 
 All the key configuration settings can be updated on our yaml file (_scadrial-config.yaml_). It is important to update this for our specific use case before proceeding to the next step. The script will read the yaml and create variables that will be used for each of the following steps. Variables that are not applicable should be left blank. The following table illustrates how the variables might be updated for three use-cases:
 
-variable | USB/Serial Console | USB/Monitor | Image/Virtual Machine
+variable | USB or Disk with Serial Console | USB or Disk with Monitor | Image File for Virtual Machine
 ----- | ----- | ----- | -----
 [cfg_scadrial_dist_name](a "Debian-based Distribiton Name") | focal | focal | focal 
 [cfg_scadrial_dist_vers](a "Distribution Version Number") | 20.04 | 20.04 | 20.04
@@ -75,13 +75,13 @@ variable | USB/Serial Console | USB/Monitor | Image/Virtual Machine
 
 ### Part Two: Setup Scadrial Boot Media
 
-First, we insert our new media device (e.g. USB stick) on our server or configure our loop device (e.g IMG file) on our virtual machine. Ensure that any partitions are not mounted, and then run:
+First, we insert our new media device (e.g. USB stick) on our server or configure our loop device file (e.g IMG file) for our virtual machine. Ensure that any partitions are not mounted, and then run:
 
 ``` bash
 sudo ./scadrial-setup.sh install [password]
 ```
 
-Note: the script will completely wipe our media. The [password] is an optional command line parameter, if not provided the script will ask you to enter a password on execution when appropriate.
+The script will completely wipe and partition our media, and then install Scadrial. The [password] is an optional command line parameter, if not provided the script will ask you to enter a password on execution when appropriate.
 
 ### Part Three: Install Scadrial on Our "Machine"
 
@@ -95,7 +95,18 @@ sudo ./system_01_networking.sh
 sudo ./system_02_mistborn.sh
 ```
 
-After booting into our media, if we would like to install Scadrial on a new disk drive (i.e. ssd, virtual disk, etc.), we can adjust our config yaml on our boot media as needed and then repeat the Part Two step above on our host system (i.e. physical or virtual machine).
+### Cloning Install: An Example
+
+After booting into our media, rather than completing the steps from Part Three, we can clone Scadrial onto a new disk drive (i.e. ssd, virtual disk, etc.). After which we can update the cloned version of our yaml file and run cloned versions of the scripts on the new disk drive.
+
+For example, say we want to install Scadrial onto a _virtual machine_:
+1. Initially, we update our yaml file to make a bootable image file (i.e. the example from the 3rd column above).
+2. Then we complete the Part Two step to build the bootable loop file (i.e. IMG file).
+3. Then we mount the IMG file onto a virtual machine as a disk.
+4. After booting the virtual machine, we can update our cloned yaml file for installing onto a disk rather than a loop file (i.e. either example from the 1st or 2nd column above).
+5. Then we can repeat the steps from Part 2 and Part 3 to finalize setup onto the machine's disk (e.g. /dev/vda).
+
+The benefit of the cloning approach on a virtual machine is that the standard virtual machine drive format might be faster or more space efficient. The benefit of using the cloning approach on an actual physcial machine is that an NVMe or SSD drive might have significantly more storage or performance when compared to a USB drive. 
 
 ## Internet Access
 

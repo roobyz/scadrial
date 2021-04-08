@@ -42,10 +42,10 @@ scadrial:
   network:
     # wide-area network
     wan:
-      iface: eno1
+      iface: enp1s0
     # local-area network
     lan:
-      iface: enp4s0
+      iface: enp2s0
       addrs: 10.16.35.1/24
     # wireless access point
     wap:
