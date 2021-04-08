@@ -50,10 +50,10 @@ variable | USB/Serial Console | USB/Monitor | Image/Virtual Machine
 ----- | ----- | ----- | -----
 [cfg_scadrial_dist_name](a "Debian-based Distribiton Name") | focal | focal | focal 
 [cfg_scadrial_dist_vers](a "Distribution Version Number") | 20.04 | 20.04 | 20.04
-[cfg_scadrial_device_loop](a "Loop Device Desired. A file that acts as a block-based device. (i.e. ISO or IMG file)") | n | n | `y`
-[cfg_scadrial_device_loop_file](a "Loop File Name") | | | `scadrial.img`
-[cfg_scadrial_device_loop_size](a "Loop File Size") | | | `8G`
-[cfg_scadrial_device_name](a "Device Name") | /dev/sda | /dev/sda | `/dev/loop0`
+[cfg_scadrial_device_loop](a "Loop Device Desired. A file that acts as a block-based device. (i.e. ISO or IMG file)") | n | n | **`y`**
+[cfg_scadrial_device_loop_file](a "Loop File Name") | | | **`scadrial.img`**
+[cfg_scadrial_device_loop_size](a "Loop File Size") | | | **`8G`**
+[cfg_scadrial_device_name](a "Device Name") | /dev/sda | /dev/sda | **`/dev/loop0`**
 [cfg_scadrial_device_pool](a "Mount path for btrfs pool setup") | /mnt/btrfs_pool | /mnt/btrfs_pool | /mnt/btrfs_pool
 [cfg_scadrial_device_optn](a "fstab parameters for btrfs filesystem") | compress=zstd | compress=zstd | compress=zstd
 [cfg_scadrial_device_luks](a "Name of luks crypt device. Sequence number will be added to avoid duplicate values") | crypt_root | crypt_root | crypt_root
@@ -61,8 +61,8 @@ variable | USB/Serial Console | USB/Monitor | Image/Virtual Machine
 [cfg_scadrial_host_user](a "user for our machine. Note mistborn requires a user name 'mistborn'") | mistborn | mistborn | mistborn
 [cfg_scadrial_host_path](a "Mount path for our chroot jail") | /mnt/debootpath | /mnt/debootpath | /mnt/debootpath
 [cfg_scadrial_host_tzne](a "Our local time zone") | America/Los_Angeles | America/Los_Angeles | America/Los_Angeles
-[cfg_scadrial_host_cons_vtty](a "Virtual Console desired") | `n` | y | y
-[cfg_scadrial_host_cons_stty](a "Serial Console settings. Serial console will not be configured if left blank.") | `ttyS0,115200n8` | |
+[cfg_scadrial_host_cons_vtty](a "Virtual Console desired") | **`n`** | y | y
+[cfg_scadrial_host_cons_stty](a "Serial Console settings. Serial console will not be configured if left blank.") | **`ttyS0,115200n8`** | |
 [cfg_scadrial_host_cpit](a "Mistborn Cockpit installation desired") | y | y | y
 [cfg_scadrial_host_nblk](a "nouveau driver should be blocked") | y | y | y
 [cfg_scadrial_network_wan_iface](a "Interface name for WAN device (i.e internet access). Must use the name from our machine.") | eno1 | eno1 | eno1
