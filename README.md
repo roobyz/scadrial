@@ -61,7 +61,7 @@ variable | USB/Serial Console | USB/Monitor | Image/Virtual Machine
 [cfg_scadrial_host_user](a "user for our machine. Note mistborn requires a user name 'mistborn'") | mistborn | mistborn | mistborn
 [cfg_scadrial_host_path](a "Mount path for our chroot jail") | /mnt/debootpath | /mnt/debootpath | /mnt/debootpath
 [cfg_scadrial_host_tzne](a "Our local time zone") | America/Los_Angeles | America/Los_Angeles | America/Los_Angeles
-[cfg_scadrial_host_cons_vtty](a "Virtual Console desired") | **`n`** | y | y
+[cfg_scadrial_host_cons_vtty](a "Virtual Console desired. Getty console access with monitor and keyboard.") | **`n`** | y | y
 [cfg_scadrial_host_cons_stty](a "Serial Console settings. Serial console will not be configured if left blank.") | **`ttyS0,115200n8`** | |
 [cfg_scadrial_host_cpit](a "Mistborn Cockpit installation desired") | y | y | y
 [cfg_scadrial_host_nblk](a "nouveau driver should be blocked") | y | y | y
