@@ -336,8 +336,37 @@ script_setup() {
 	sed -i 's/.*Restart.*/Restart=always/' /lib/systemd/system/hostapd.service
 	sed -i 's/.*RestartSec.*/RestartSec=5/' /lib/systemd/system/hostapd.service
 
+	#----------------------------------------------------------------------------
+	echo "Setup port forwarding"
+	#----------------------------------------------------------------------------
+	cat <<- EOF > /etc/systemd/system/Scadrial-router.service
+	[Unit]
+	Description=Scadrial Router Service
+	After=multi-user.target
+
+	[Service]
+	Type=oneshot
+	RemainAfterExit=true
+
+	# Pre start: port forward udp packets from interfaces on wap and lan to router
+	ExecStart=/sbin/iptables -t nat -A PREROUTING -i wap -p udp -j DNAT --to-destination ${riface}
+	ExecStart=/sbin/iptables -t nat -A PREROUTING -i lan -p udp -j DNAT --to-destination ${riface}
+
+	# Start: ensure the wireless and dhcp services are restarted
+	ExecStart=/usr/bin/systemctl restart hostapd
+	ExecStart=/usr/bin/systemctl restart isc-dhcp-server
+
+	# Post stop: clean up the udp port forwarding to router
+	ExecStop=/sbin/iptables -t nat -D PREROUTING -i wap -p udp -j DNAT --to-destination ${riface}
+	ExecStop=/sbin/iptables -t nat -D PREROUTING -i lan -p udp -j DNAT --to-destination ${riface}
+
+	[Install]
+	WantedBy=graphical.target
+	EOF
+
 	systemctl enable hostapd
 	systemctl enable systemd-networkd
+	systemctl enable Scadrial-router
 
 	log "Reboot to ensure DHCP is set on local interfaces."
 	SEOF
