@@ -65,29 +65,53 @@ variable | USB or Disk with Serial Console | USB or Disk with Monitor | Image Fi
 [cfg_scadrial_host_cons_stty](a "Serial Console settings. Serial console will not be configured if left blank.") | **`ttyS0,115200n8`** | |
 [cfg_scadrial_host_cpit](a "Mistborn Cockpit installation desired") | y | y | y
 [cfg_scadrial_host_nblk](a "nouveau driver should be blocked") | y | y | y
-[cfg_scadrial_network_wan_iface](a "Interface name for WAN device (i.e internet access). Must use the name from our machine.") | eno1 | eno1 | eno1
-[cfg_scadrial_network_lan_iface](a "Interface name for LAN device (i.e. local access). Must use the name from our machine") | enp4s0 | enp4s0 | enp4s0
-[cfg_scadrial_network_lan_addrs](a "DHCPv4 address range for our LAN") | 10.16.35.1/24 | 10.16.35.1/24 | 10.16.35.1/24
-[cfg_scadrial_network_wap_iface](a "Interface name for our Wireless Access Point. Must use the name from our machine") | wlp2s0 | wlp2s0 | wlp2s0
-[cfg_scadrial_network_wap_addrs](a "DHCPv4 address range for our WAP") | 10.16.45.1/24 | 10.16.45.1/24 | 10.16.45.1/24
-[cfg_scadrial_network_wap_pass](a "WAP passphrase") | mypass_1234 | mypass_1234 | mypass_1234
-[cfg_scadrial_network_wap_ssid](a "WAP SSID Name") | my_wifi_spot | my_wifi_spot | my_wifi_spot
+[cfg_scadrial_network_wan0_iface](a "Interface name for WAN device (i.e internet access). Must use the name from our machine.") | eno1 | eno1 | eno1
+[cfg_scadrial_network_lan0_iface](a "Interface name for LAN device (i.e. local access). Must use the name from our machine") | enp4s0 | enp4s0 | enp4s0
+[cfg_scadrial_network_lan0_addrs](a "DHCPv4 address range for our LAN") | 10.16.35.1/24 | 10.16.35.1/24 | 10.16.35.1/24
+[cfg_scadrial_network_wlan0_iface](a "Interface name for our Wireless Access Point. Must use the name from our machine") | wlp2s0 | wlp2s0 | wlp2s0
+[cfg_scadrial_network_wlan0_addrs](a "DHCPv4 address range for our WAP") | 10.16.45.1/24 | 10.16.45.1/24 | 10.16.45.1/24
+[cfg_scadrial_network_wlan0_pass](a "WAP passphrase") | mypass_1234 | mypass_1234 | mypass_1234
+[cfg_scadrial_network_wlan0_ssid](a "WAP SSID Name") | my_wifi_spot | my_wifi_spot | my_wifi_spot
 
 ### Part Two: Setup Scadrial Boot Media
 
-First, we insert our new media device (e.g. USB stick) on our server or configure our loop device file (e.g IMG file) for our virtual machine. Ensure that any partitions are not mounted, and then run:
+First, we insert our new media device (e.g. USB stick) into our machine, or configure our loop device file (e.g IMG file) for our virtual machine. Then we run:
 
 ``` bash
 sudo ./scadrial-setup.sh install [password]
 ```
 
-The script will completely wipe and partition our media, and then install Scadrial. The [password] is an optional command line parameter, if not provided the script will ask you to enter a password on execution when appropriate.
+Scadrial will completely wipe and partition our media, and then install our Debian-based Linux distribution. The [password] is an optional command line parameter, however if not provided you will be asked to enter one when appropriate.
+
+Our Linux distribution will be installed using `deboostrap` with some finalization scripts to finish our setup. Afterward, we will `chroot` into our system and finalize our setup, by running the following steps:
+
+``` bash
+sudo chroot /mnt/debootpath /bin/bash
+cd /home/mistborn/scadrial
+./scadrial-finalize.sh  [password]
+```
+
+This will install additional required software, configure the environment and mistborn user, and make the media bootable. Also, Mistborn will be staged for installation using our yaml configuration file. Upon completion, we can exit the chroot environment and then boot into our new media.
 
 ### Part Three: Install Scadrial on Our "Machine"
 
-Once our Scadrial boot media is configured, we can install Scadrial and/or Mistborn on our machine. This can be a physical or virtual machine. If we would like to install on a virtual machine, then the boot media created in step one should be a disk image created with a loop device, and the virtual machine should be configured for UEFI boot.
+Once we have booted into our media, we can install Mistborn on our machine. If we would like to install on a virtual machine, then the boot media created in step one should be a disk image created with a loop device, and the virtual machine should be configured for UEFI boot.
 
-After booting Scadrial on our new host machine, login as the 'mistborn' user and run the following if you would like to install on our existing media (i.e USB stick or IMG file):
+After booting Scadrial on our new host machine, login as the 'mistborn' user.
+
+If networking is not running then restart it as follows:
+
+``` bash
+sudo systemctl restart systemd-networkd
+```
+
+With the network running, install system updates and then reboot the system:
+
+``` bash
+sudo apt-get update && sudo apt-get -y dist-upgrade
+```
+
+Finally, run the following to install/setup Mistborn on our desired media (i.e USB stick, SSD, NVMe, or IMG file):
 
 ``` bash
 cd scadrial
@@ -114,12 +138,12 @@ To access our Mistborn environment from the Internet, three things need to happe
 1. Wireguard must be setup with a public endpoint on Mistborn and our client machine (i.e. phone, laptop, etc.)
 2. port forwarding will need to be configured on the NAT settings for our modem and/or routers.
     - One option is to forward _all_ incoming UDP traffic on our Internet facing NIC to the private router IP address of our Mistborn server. While ensuring that our firewall does not drop any UDP packets, Wireguard will silently drop all _invalid_ incoming packets by default. Another option is to allow only a specified list of UDP ports, however we would need to update our NAT settings for each new Wireguard port on every user device that is added or changed in Mistborn.
-    - UDP traffic on our internal ethernet and wireless adapters that is bound for our Mistborn public IP address, may also be forwarded to our Mistborn private IP address. The benefit of this is that each client device would only need to be confgured once for Wireguard access, and our device can be connected via Wireguard to Mistborn full-time. This would enable transparent movement between our private and most public networks without needing to connect and reconnect our Wireguard client. On our default test system, we can forward udp packets from the _wap_ and _lan_ interfaces to our scadrial server (IP address on our router) that contains Mistborn, as follows:
+    - UDP traffic on our internal ethernet and wireless adapters that is bound for our Mistborn public IP address, may also be forwarded to our Mistborn private IP address. The benefit of this is that each client device would only need to be confgured once for Wireguard access, and our device can be connected via Wireguard to Mistborn full-time. This would enable transparent movement between our private and most public networks without needing to connect and reconnect our Wireguard client. On our default test system, we can forward udp packets from the _wlan0_ and _lan0_ interfaces to our scadrial server (IP address on our router) that contains Mistborn, as follows:
 
 ``` bash
 # Capture all inbound UPD traffic from our internal network and route to our scadrial server (i.e. 10.10.10.12)
-sudo iptables -t nat -A PREROUTING -i wap -p udp -j DNAT --to-destination 10.10.10.12
-sudo iptables -t nat -A PREROUTING -i lan -p udp -j DNAT --to-destination 10.10.10.12
+sudo iptables -t nat -A PREROUTING -i wlan0 -p udp -j DNAT --to-destination 10.10.10.12
+sudo iptables -t nat -A PREROUTING -i lan0 -p udp -j DNAT --to-destination 10.10.10.12
 ```
 
 # Work In Progress...
@@ -129,7 +153,9 @@ Although this is still a work in progress, it functions in my specified use-case
 ### Todo:
 * ~~_loopdevice_: Update scripts to setup and control loop devices images for use on virtual machines~~ **_done_**
 * _backup_: save existing installation settings
-* _restore_: restore settings after replacing an existing installation 
+* _restore_: restore settings after replacing an existing installation
+  * cp /etc/wireguard/*.conf
+  * cp /etc/systemd/system/multi-user.target.wants/wg-quick*.service
 * _hardening_: once functioning as desired, apply some [hardening][01] settings
 
 ### References:
