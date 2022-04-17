@@ -1,0 +1,78 @@
+# This file contains high level configuration parameters for setup 
+
+scadrial:
+  # Parameters for the Ubuntu distribution
+  dist:
+    name: focal
+    vers: 20.04
+  # Parameters for destination media
+  device:
+    # Specify loop devices settings
+    # Note: if loop set to "y" ensure cons/vtty set to "y" and cons/stty commented out
+    loop: n
+      file: scadrial.img
+      size: 8G
+    # Specify device name (i.e. /dev/sda or /dev/loop0)
+    # name: /dev/loop0
+    name: /dev/sda
+    pool: /mnt/btrfs_pool
+    optn: ssd,noatime,compress=zstd,commit=120
+    luks: crypt_root
+  # Parameters for chroot environment
+  host:
+    name: scadrial
+    user: mistborn
+    path: /mnt/debootpath
+    tzne: America/Vancouver
+    # Set console login parameters for boot-time access via serial (null modem) cable or virtual console
+    # https://tldp.org/HOWTO/Remote-Serial-Console-HOWTO/configure-kernel.html
+    # Note: When enabling multiple consoles, although output is sent to all consoles, input is only taken from the last enabled console.
+    #       In this case, stty is the last enabled conosle. Setting vtty to 'y' will enable tty1 for debugging stty access.
+    cons:
+      # Change to 'y' if you need a virtual console (aka connect via keyboard/monitor)
+      vtty: y
+      # Comment out below if you do not need access vi serial (null modem) cable
+      stty: ttyS0,115200n8
+    # Install cockpit (y/N)
+    cpit: y
+    # Block nouveau driver
+    nblk: y
+  # Parameters for networking (netplan) configuration
+  # https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-consistent_network_device_naming
+  # https://ubuntu.com/blog/ubuntu-bionic-netplan
+  network:
+    # wide-area network
+    wan0:
+      enabled: true
+      iface: enp1s0
+    # local-area network
+    lan0:
+      enabled: true
+      iface: enp2s0
+      addrs: 10.16.25.1/24
+    # local-area network
+    lan1:
+      enabled: false
+      iface: enp3s0
+      addrs: 10.16.35.1/24
+    # wireless access point
+    wap0:
+      enabled: false
+      iface: wlp1s0
+      addrs: 10.16.45.1/24
+      # replace passphrase with something unique
+      pass: 
+      # rename wireless access point as desired
+      ssid: 
+      # Country code (ISO/IEC 3166-1). Used to set regulatory domain.
+      cntry: US
+    wap1:
+      enabled: false
+      iface: wlx00c0caaf5774
+      addrs: 10.16.55.1/24
+      # replace passphrase with something unique
+      pass: 
+      # rename wireless access point as desired
+      ssid: 
+      # Country code (ISO/IEC 3166-1). Used to set regulatory domain.
+      cntry: US
