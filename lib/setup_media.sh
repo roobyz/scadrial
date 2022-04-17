@@ -191,7 +191,7 @@ media_setup() {
 	#----------------------------------------------------------------------------
 	log "Bootstrap the new system"
 	#----------------------------------------------------------------------------
-	suds "debootstrap --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_host_path" http://archive.ubuntu.com/ubuntu
+	suds "debootstrap --no-check-gpg --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_host_path" http://archive.ubuntu.com/ubuntu
 	for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
 
 }
