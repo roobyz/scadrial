@@ -8,8 +8,7 @@ echo "$cfg_scadrial_device_name $cfg_scadrial_device_pool $cfg_scadrial_device_o
 # shellcheck disable=SC2154
 echo "$cfg_scadrial_host_name $cfg_scadrial_host_user $cfg_scadrial_host_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
 
-
-script_setup() {
+finish_script() {
 	echo "Setup Scripts folder"
 	suds "mkdir -p  $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 	suds "cp -r ./* $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial/"
@@ -42,6 +41,7 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	log "Setup environment, user and access"
 	#----------------------------------------------------------------------------
+	export PATH=/usr/sbin:$PATH
 	useradd -M -s /bin/bash "$cfg_scadrial_host_user"
 	echo "${cfg_scadrial_host_user}:${passphrase}" | chpasswd
 	set_sudoer "$cfg_scadrial_host_user"
@@ -102,11 +102,11 @@ script_setup() {
 	echo "deb http://archive.ubuntu.com/ubuntu focal-backports main universe" >> /etc/apt/sources.list
 	apt-get update && apt-get -y upgrade
 
-	kernel="linux-image-generic-hwe-${cfg_scadrial_dist_vers}"
+	kernel="linux-generic-hwe-${cfg_scadrial_dist_vers}"
 
 	apt-get install -y --no-install-recommends "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs \
-	git ssh pciutils lvm2 iw hostapd gdisk btrfs-progs debootstrap parted fwupd net-tools bridge-utils iproute2 iptables \
-	isc-dhcp-server ca-certificates curl figlet dosfstools
+	git ssh pciutils lvm2 iw gdisk btrfs-progs dkms debootstrap parted fwupd net-tools bridge-utils iproute2 iptables \
+	hostapd isc-dhcp-server ca-certificates curl figlet dosfstools
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
@@ -171,6 +171,14 @@ script_setup() {
 	fi
 
 	# Setup bats testing respsitory
+	if [ -d r8812au ]; then
+		(cd r8812au && git pull --rebase)
+	else
+		git clone https://github.com/aircrack-ng/rtl8812au.git r8812au
+		# git clone https://github.com/morrownr/8812au-20210629.git r8812au
+	fi
+
+	# Setup bats testing respsitory
 	if [ -d bats ]; then
 		(cd bats && git pull --rebase)
 	else
@@ -197,7 +205,7 @@ script_setup() {
 	  version: 2
 	  renderer: networkd
 	  ethernets:
-	    ${cfg_scadrial_network_wan_iface}:
+	    ${cfg_scadrial_network_wan0_iface}:
 	      dhcp4: yes
 	EOF
 	
@@ -215,12 +223,15 @@ script_setup() {
 	log "After booting into our new host, login as 'mistborn' user and run the following:"
 	#----------------------------------------------------------------------------
 	echo "cd scadrial"
+	echo "sudo systemctl restart systemd-networkd"
 	echo "sudo ./system_01_networking.sh"
 	echo "sudo ./system_02_mistborn.sh"
 	echo "Still work in progress..."
 	echo "sudo ./system_03_hardening.sh"
 	SEOF
+}
 
+setup_scripts() {
 	echo "Setup Networking script"
 	cat <<- 'SEOF' > system_01_networking.sh
 	#!/bin/bash
@@ -237,136 +248,155 @@ script_setup() {
 	#----------------------------------------------------------------------------
 	figlet "Scadrial: Setup networking..."
 	#----------------------------------------------------------------------------
+	setIface() {
+	  parse_yaml scadrial-config.yaml "cfg_" | while IFS= read -r line; do
+	    name=${line%%=*}
+	    value=${line#*=}
+
+	    if [[ $name == "cfg_scadrial_network"* ]]; then
+	      IFS='_' read -ra my_array <<< "$name"
+
+	      if [ ${my_array[4]} == "enabled" ]; then
+	        if [[ $value == *"true"* ]]; then
+	          DEV=${my_array[3]}
+	        else
+	          DEV="None"
+	        fi
+	      fi
+
+	      if [[ $DEV != "None" ]]; then
+	        # Get the interface
+	        if [[ ${my_array[4]} == "iface" ]]; then
+	          if [[ $DEV == "wan0" ]]; then
+	            echo "$DEV=$(echo $value | tr -d '(")')"
+	          else 
+	            iface=$(echo $value | tr -d '(")')
+	          fi
+	        fi
+
+	        # Get any addresses
+	        if [[ ${my_array[4]} == "addrs" ]]; then
+	          echo "$DEV=${iface},$(echo $value | tr -d '(")')"
+	        fi
+	      fi
+	    fi
+	  done
+	}
+
+	ifaceArray=($(setIface))
 
 	#----------------------------------------------------------------------------
 	echo "Setup networking interfaces"
 	#----------------------------------------------------------------------------
-	# Indentify interface hw addresses
-	WAN_MAC=$((networkctl status ${cfg_scadrial_network_wan_iface} 2>/dev/null || networkctl status wan 2>/dev/null) | \
-	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-	LAN_MAC=$((networkctl status ${cfg_scadrial_network_lan_iface} 2>/dev/null || networkctl status lan 2>/dev/null) | \
-	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-	WAP_MAC=$((networkctl status ${cfg_scadrial_network_wap_iface} 2>/dev/null || networkctl status wap 2>/dev/null) | \
-	  grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
-	
 	# Get the real address for the public interface (wan)
 	riface=$(networkctl -a status | awk '/DHCP4/ {print $1 $2}' | sed 's/Address://' | sed 's/(DHCP4)//')
 
-	# Configure interfaces
-	cat <<- EOF > /etc/netplan/01-netcfg.yaml
-	# This file describes the network interfaces available on your system
-	# For more information, see netplan(5).
-	network:
-	  version: 2
-	  renderer: networkd
-	  ethernets:
-	    wan:
-	      dhcp4: yes
-	      match:
-	        macaddress: ${WAN_MAC}
-	      set-name: wan
-	    lan:
-	      dhcp4: no
-	      dhcp6: no
-	      match:
-	        macaddress: ${LAN_MAC}
-	      set-name: lan
-	      # Prevent waiting for interface
-	      optional: yes
-	      addresses: [${cfg_scadrial_network_lan_addrs}]
-	      nameservers:
-	        addresses: [${riface}]
-	    wap:
-	      dhcp4: no
-	      dhcp6: no
-	      match:
-	        macaddress: ${WAP_MAC}
-	      set-name: wap
-	      # Prevent waiting for interface
-	      optional: yes
-	      addresses: [${cfg_scadrial_network_wap_addrs}]
-	      nameservers:
-	        addresses: [${riface}]
-	EOF
+	# Indentify interface hw addresses
+	for p in "${ifaceArray[@]}"; do
+	  IFS='=' read -ra iface <<< "$p"
+		
+	  if [[ ${iface[0]} == "wan0" ]]; then
+	    MAC=$((networkctl status ${iface[1]} 2>/dev/null || networkctl status ${iface[0]} 2>/dev/null) | \
+	      grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+		
+			cat <<- EOF > /etc/netplan/01-netcfg.yaml
+			# This file describes the network interfaces available on your system
+			# For more information, see netplan(5).
+			network:
+			  version: 2
+			  renderer: networkd
+			  ethernets:
+			    wan0:
+			      dhcp4: yes
+			      match:
+			        macaddress: ${MAC}
+			      set-name: wan0
+			EOF
+
+			cat <<- EOF > /etc/dhcp/dhcpd.conf
+			default-lease-time 600;
+			max-lease-time 7200;
+			EOF
+
+	  else
+	    IFS=',' read -ra device <<< "${iface[1]}"
+	    MAC=$((networkctl status ${device[0]} 2>/dev/null || networkctl status ${iface[0]} 2>/dev/null) | \
+	      grep "HW Address" | sed "s/.*HW Address: //" | awk '{print $1}')
+		
+			cat <<- EOF >> /etc/netplan/01-netcfg.yaml
+			    ${iface[0]}:
+			      dhcp4: no
+			      dhcp6: no
+			      match:
+			        macaddress: ${MAC}
+			      set-name: ${iface[0]}
+			      # Prevent waiting for interface
+			      optional: yes
+			      addresses: [${device[1]}]
+			      nameservers:
+			        addresses: [${riface}]
+			EOF
+
+	    cat <<- EOF >> /etc/dhcp/dhcpd.conf
+
+			subnet ${device[1]%.*}.0 netmask 255.255.255.0 {
+			  range ${device[1]%.*}.10 ${device[1]%.*}.25;
+			  option routers ${riface};
+			  option domain-name-servers ${riface};
+			}
+			EOF
+	  fi
+	done
 
 	netplan apply
 
 	# NOTE: local networks should be up even if there is no carrier (aka: no client connected). This will
 	# enable the DHCP server to always be running and serve IP addresses the moment you connect a client. 
-	for FILE in lan wap; do
-	  cp "/run/systemd/network/10-netplan-${FILE}.network" "/etc/systemd/network/10-netplan-${FILE}.network"
-	  echo "ConfigureWithoutCarrier=yes" >> "/etc/systemd/network/10-netplan-${FILE}.network"
+	for p in "${ifaceArray[@]}"; do
+	  IFS='=' read -ra iface <<< "$p"
+		
+	  if [[ ${iface[0]} != "wan"* ]]; then
+	    cp "/run/systemd/network/10-netplan-${iface[0]}.network" "/etc/systemd/network/10-netplan-${iface[0]}.network"
+	    echo "ConfigureWithoutCarrier=yes" >> "/etc/systemd/network/10-netplan-${iface[0]}.network"
+	    sed -i "s/LinkLocalAddressing=ipv6/LinkLocalAddressing=ipv4/" "/etc/systemd/network/10-netplan-${iface[0]}.network"
+	    devNames+="${iface[0]} "
+	  fi
 	done
 
 	#----------------------------------------------------------------------------
 	echo "Setup dhcp for local interfaces"
 	#----------------------------------------------------------------------------
 	# Configure the dhcp server settings for local connections.
-	sed -i "s/.*INTERFACESv4.*/INTERFACESv4=\"lan wap\"/" /etc/default/isc-dhcp-server
+	sed -i "s/.*INTERFACESv4.*/INTERFACESv4=\"$(echo ${devNames} | xargs)\"/" /etc/default/isc-dhcp-server
 	sed -i "s/.*INTERFACESv6.*/#INTERFACESv6=/" /etc/default/isc-dhcp-server
 	systemctl disable isc-dhcp-server6
 	
-	cat <<- EOF > /etc/dhcp/dhcpd.conf
-	default-lease-time 600;
-	max-lease-time 7200;
-
-	subnet ${cfg_scadrial_network_lan_addrs%.*}.0 netmask 255.255.255.0 {
-	  range ${cfg_scadrial_network_lan_addrs%.*}.10 ${cfg_scadrial_network_lan_addrs%.*}.25;
-	  option routers ${riface};
-	  option domain-name-servers ${riface};
-	}
-
-	subnet ${cfg_scadrial_network_wap_addrs%.*}.0 netmask 255.255.255.0 {
-	  range ${cfg_scadrial_network_wap_addrs%.*}.10 ${cfg_scadrial_network_wap_addrs%.*}.25;
-	  option routers ${riface};
-	  option domain-name-servers ${riface};
-	}
-	EOF
-
 	#----------------------------------------------------------------------------
 	echo "Setup wireless access point"
 	#----------------------------------------------------------------------------
-	cp hostapd.conf /etc/hostapd/hostapd.conf
-
-	# Update configuration file
-	sed -i "s/ssid=.*/ssid=${cfg_scadrial_network_wap_ssid}/" /etc/hostapd/hostapd.conf
-	sed -i "s/wpa_passphrase=.*/wpa_passphrase=${cfg_scadrial_network_wap_pass}/" /etc/hostapd/hostapd.conf
-
 	# Update service file
-	sed -i 's/.*Restart.*/Restart=always/' /lib/systemd/system/hostapd.service
-	sed -i 's/.*RestartSec.*/RestartSec=5/' /lib/systemd/system/hostapd.service
+	sed -i 's/.*Restart=.*/Restart=always/' /lib/systemd/system/hostapd.service
+	sed -i 's/.*RestartSec=.*/RestartSec=5/' /lib/systemd/system/hostapd.service
 
-	#----------------------------------------------------------------------------
-	echo "Setup port forwarding"
-	#----------------------------------------------------------------------------
-	cat <<- EOF > /etc/systemd/system/Scadrial-router.service
-	[Unit]
-	Description=Scadrial Router Service
-	After=multi-user.target
+	for d in wap0 wap1; do
+		cp ./hostapd/${d}.conf /etc/hostapd/${d}.conf
 
-	[Service]
-	Type=oneshot
-	RemainAfterExit=true
+		# Update configuration file
+		if [[ $d == "wap0" ]]; then
+		  SSID=${cfg_scadrial_network_wap0_ssid}
+		  PASS=${cfg_scadrial_network_wap0_pass}
+		else
+		  SSID=${cfg_scadrial_network_wap1_ssid}
+		  PASS=${cfg_scadrial_network_wap1_pass}
+		fi
 
-	# Pre start: port forward udp packets from interfaces on wap and lan to router
-	ExecStart=/sbin/iptables -t nat -A PREROUTING -i wap -p udp -j DNAT --to-destination ${riface}
-	ExecStart=/sbin/iptables -t nat -A PREROUTING -i lan -p udp -j DNAT --to-destination ${riface}
+		sed -i "s/^ssid=.*/ssid=${SSID}/" /etc/hostapd/${d}.conf
+		sed -i "s/wpa_passphrase=.*/wpa_passphrase=${PASS}/" /etc/hostapd/${d}.conf
+		systemctl enable hostapd@${d}
+	done
 
-	# Start: ensure the wireless and dhcp services are restarted
-	ExecStart=/usr/bin/systemctl restart hostapd
-	ExecStart=/usr/bin/systemctl restart isc-dhcp-server
-
-	# Post stop: clean up the udp port forwarding to router
-	ExecStop=/sbin/iptables -t nat -D PREROUTING -i wap -p udp -j DNAT --to-destination ${riface}
-	ExecStop=/sbin/iptables -t nat -D PREROUTING -i lan -p udp -j DNAT --to-destination ${riface}
-
-	[Install]
-	WantedBy=graphical.target
-	EOF
-
-	systemctl enable hostapd
+	systemctl disable hostapd
 	systemctl enable systemd-networkd
-	systemctl enable Scadrial-router
 
 	log "Reboot to ensure DHCP is set on local interfaces."
 	SEOF
@@ -436,8 +466,4 @@ script_setup() {
 	(cd hardening/tests/ && sudo bats . > ../bats-results2.log)
 	apt-get install -y git
 	SEOF
-
-	# Move the second step script to our media device
-	sudo chmod +x scadrial-finalize.sh system_*.sh
-	suds "mv scadrial-finalize.sh system_*.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 }
