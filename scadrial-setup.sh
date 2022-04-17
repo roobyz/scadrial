@@ -33,6 +33,15 @@ for i in "${pre_reqs[@]}"; do
 	cmd_check "$i"
 done
 
+final_message() {
+	#----------------------------------------------------------------------------
+	log "Enter the new system and finalize our setup, by running the following:"
+	#----------------------------------------------------------------------------
+	echo "sudo chroot $cfg_scadrial_host_path /bin/bash"
+	echo "cd /home/$cfg_scadrial_host_user/scadrial"
+	echo "./scadrial-finalize.sh $passphrase"
+}
+
 # Set passphrase if provided
 if [ -n "${2:-}" ]; then
 	# Strip any newline from assigned variable
@@ -43,45 +52,55 @@ fi
 while test $# -gt 0; do
     case "${1}" in
     h|help)
-        shelp
-        exit 0
-        ;;
+      shelp
+      exit 0
+      ;;
     install)
-		# Check if meadia already configured.
-		if [ ! "$(df --output=target | grep -c "${cfg_scadrial_host_path}")" == "0" ]; then
-			log "The media is already mounted."
-			read -p "Would you like to force install? (y/n): " -r schk
-			if [ ! "$schk" == "y" ]; then
-				echo "Exiting..."
-				exit 0
+			# Check if meadia already configured.
+			if [ ! "$(df --output=target | grep -c "${cfg_scadrial_host_path}")" == "0" ]; then
+				log "The media is already mounted."
+				read -p "Would you like to force install? (y/n): " -r schk
+				if [ ! "$schk" == "y" ]; then
+					echo "Exiting..."
+					exit 0
+				fi
 			fi
-		fi
     	# Setup storage media/environment
-		media_setup
-		shift
-        ;;
+			media_setup
+			shift
+      ;;
     unmount)
-		media_reset
-		exit 0
-        ;;
+			media_reset
+			exit 0
+      ;;
+    scripts)
+			# Check if meadia already configured.
+			if [[ ! "$(df --output=target | grep -c "${cfg_scadrial_host_path}")" != "0" ]]; then
+				log "The media is not mounted. First run the debug setup."
+				exit 1
+			fi
+			setup_scripts
+			final_message
+			exit 0
+      ;;
     debug)
-		media_reset
-        media_mount
-		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
-		log "To enter the new system for debugging, type the following:"
-		echo "sudo chroot $cfg_scadrial_host_path /bin/bash" && echo
-		exit 0
-        ;;
+			media_reset
+    	media_mount
+			for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
+			log "To enter the new system for debugging, type the following:"
+			echo "sudo chroot $cfg_scadrial_host_path /bin/bash" && echo
+			exit 0
+      ;;
     repair)
-		media_reset
-        media_mount
-		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
-		shift
-        ;;
+			media_reset
+      media_mount
+			for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
+			shift
+      ;;
     *)
-        shelp
-        err "unknown argument '${1}'"
-        ;;
+      shelp
+      err "unknown argument '${1}'"
+      ;;
     esac
     shift
 done
@@ -89,11 +108,11 @@ done
 #----------------------------------------------------------------------------
 log "Generate final system scripts."
 #----------------------------------------------------------------------------
-script_setup
+finish_script
+setup_scripts
 
-#----------------------------------------------------------------------------
-log "Enter the new system and finalize our setup, by running the following:"
-#----------------------------------------------------------------------------
-echo "sudo chroot $cfg_scadrial_host_path /bin/bash"
-echo "cd /home/$cfg_scadrial_host_user/scadrial"
-echo "./scadrial-finalize.sh $passphrase"
+# Move the second step script to our media device
+sudo chmod +x scadrial-finalize.sh system_*.sh
+suds "mv scadrial-finalize.sh system_*.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
+
+final_message
