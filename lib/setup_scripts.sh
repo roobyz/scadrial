@@ -170,13 +170,13 @@ finish_script() {
 		git clone https://gitlab.com/cyber5k/mistborn.git
 	fi
 
-	# Setup bats testing respsitory
-	if [ -d r8812au ]; then
-		(cd r8812au && git pull --rebase)
-	else
-		git clone https://github.com/aircrack-ng/rtl8812au.git r8812au
-		# git clone https://github.com/morrownr/8812au-20210629.git r8812au
-	fi
+	# Setup Realtek 8812AU driver respsitory
+	# if [ -d r8812au ]; then
+	# 	(cd r8812au && git pull --rebase)
+	# else
+	# 	git clone https://github.com/aircrack-ng/rtl8812au.git r8812au
+	# 	# git clone https://github.com/morrownr/8812au-20210629.git r8812au
+	# fi
 
 	# Setup bats testing respsitory
 	if [ -d bats ]; then
