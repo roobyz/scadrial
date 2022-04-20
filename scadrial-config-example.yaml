@@ -66,6 +66,9 @@ scadrial:
       ssid: 
       # Country code (ISO/IEC 3166-1). Used to set regulatory domain.
       cntry: US
+      # channel=0 for ACS survey-based auto-channel selection
+      # 2.4Ghz - recommended channels: 2, 6, or 11
+      channel: 0
     wap1:
       enabled: false
       iface: wlx00c0caaf5774
@@ -76,3 +79,6 @@ scadrial:
       ssid: 
       # Country code (ISO/IEC 3166-1). Used to set regulatory domain.
       cntry: US
+      # channel=0 for ACS survey-based auto-channel selection
+      # 2.4Ghz - recommended channels: 2, 6, or 11
+      channel: 6
