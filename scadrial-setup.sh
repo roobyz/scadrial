@@ -110,9 +110,4 @@ log "Generate final system scripts."
 #----------------------------------------------------------------------------
 finish_script
 setup_scripts
-
-# Move the second step script to our media device
-sudo chmod +x scadrial-finalize.sh system_*.sh
-suds "mv scadrial-finalize.sh system_*.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
-
 final_message
