@@ -229,6 +229,10 @@ finish_script() {
 	echo "Still work in progress..."
 	echo "sudo ./system_03_hardening.sh"
 	SEOF
+
+	# Move the script to our media device
+	sudo chmod +x scadrial-finalize.sh
+	suds "mv scadrial-finalize.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 }
 
 setup_scripts() {
@@ -385,18 +389,42 @@ setup_scripts() {
 		if [[ $d == "wap0" ]]; then
 		  SSID=${cfg_scadrial_network_wap0_ssid}
 		  PASS=${cfg_scadrial_network_wap0_pass}
+		  CHNL=${cfg_scadrial_network_wap0_channel}
 		else
 		  SSID=${cfg_scadrial_network_wap1_ssid}
 		  PASS=${cfg_scadrial_network_wap1_pass}
+		  CHNL=${cfg_scadrial_network_wap1_channel}
 		fi
 
 		sed -i "s/^ssid=.*/ssid=${SSID}/" /etc/hostapd/${d}.conf
 		sed -i "s/wpa_passphrase=.*/wpa_passphrase=${PASS}/" /etc/hostapd/${d}.conf
+		sed -i "s/^channel=.*/channel=${CHNL}/" /etc/hostapd/${d}.conf
 		systemctl enable hostapd@${d}
 	done
 
 	systemctl disable hostapd
 	systemctl enable systemd-networkd
+
+	#----------------------------------------------------------------------------
+	echo "Setup networkd-dispatcher"
+	#----------------------------------------------------------------------------
+	# Create folders for the systemd-networkd operational states:
+	# https://www.freedesktop.org/software/systemd/man/networkctl.html
+
+	sudo mkdir -p /etc/networkd-dispatcher/{routable,dormant,no-carrier,off,carrier,degraded,configuring,configured}.d
+
+	cat <<- EOF | tee /etc/networkd-dispatcher/routable.d/isc-dhcp-server && sudo chmod +x /etc/networkd-dispatcher/routable.d/isc-dhcp-server
+	#!/bin/sh
+	# After wireless interfaces come up (routable), trigger dhcp server restart to
+	# activate dynamic IPv4 assignment after a few seconds.
+
+	if [ "\$IFACE" = "wap0" ]; then
+		sleep 5
+		echo "DHCP Restarting for WAP... \$IFACE"
+		systemctl restart isc-dhcp-server.service
+	fi
+
+	EOF
 
 	log "Reboot to ensure DHCP is set on local interfaces."
 	SEOF
@@ -466,4 +494,8 @@ setup_scripts() {
 	(cd hardening/tests/ && sudo bats . > ../bats-results2.log)
 	apt-get install -y git
 	SEOF
+
+	# Move the scripts to our media device
+	sudo chmod +x system_*.sh
+	suds "mv system_*.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 }
