@@ -1,6 +1,7 @@
 #!/bin/bash
 
-RESULT=$(sudo iw dev wlp5s0 scan | grep -A8 'freq:' | grep -E 'freq|SSID|signal|channel')
+IFACE=$(iw dev | awk '$1=="Interface"{print $2}')
+CHNLS=$(sudo iw dev ${IFACE} scan | grep -A8 'freq:' | grep -E 'freq|SSID|signal|channel')
 
 while IFS= read -r line; do
   name=${line%%:*}
@@ -15,4 +16,4 @@ while IFS= read -r line; do
   else
     echo "$line"
   fi
-done < <(printf "%s\n" "$RESULT") 
+done < <(printf "%s\n" "$CHNLS") 
