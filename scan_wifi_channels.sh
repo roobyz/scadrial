@@ -1,7 +1,7 @@
 #!/bin/bash
 
-IFACE=$(iw dev | awk '$1=="Interface"{print $2}')
-CHNLS=$(sudo iw dev ${IFACE} scan | grep -A8 'freq:' | grep -E 'freq|SSID|signal|channel')
+IFACE=$(iw dev | awk '$1=="Interface"{print $2}' | tail -n 1)
+CHNLS=$(sudo iw dev ${IFACE} scan | grep -A10 'freq:' | grep -E 'freq|SSID|signal|channel')
 
 while IFS= read -r line; do
   name=${line%%:*}
