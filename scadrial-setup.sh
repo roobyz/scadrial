@@ -13,6 +13,7 @@ source "lib/functions.sh"
 source "lib/setup_media.sh"
 # shellcheck disable=SC1091
 source "lib/setup_scripts.sh"
+source ".env"
 
 # Exit if no parameters are specified
 if test $# -lt 1; then
@@ -35,18 +36,11 @@ done
 
 final_message() {
 	#----------------------------------------------------------------------------
-	log "Enter the new system and finalize our setup, by running the following:"
+	log "Entering the new host system and finalizing our setup..."
 	#----------------------------------------------------------------------------
-	echo "sudo chroot $cfg_scadrial_host_path /bin/bash"
-	echo "cd /home/$cfg_scadrial_host_user/scadrial"
-	echo "./scadrial-finalize.sh $passphrase"
+	HOST_USER=${cfg_scadrial_host_user} sudo -E chroot $cfg_scadrial_host_path /bin/bash -c \
+	    'cd /home/${HOST_USER}/scadrial; ./scadrial-finalize.sh ${SCADRIAL_KEY}; exit'
 }
-
-# Set passphrase if provided
-if [ -n "${2:-}" ]; then
-	# Strip any newline from assigned variable
-	passphrase="${2//$'\n'/}"
-fi
 
 # Process the specified parameters
 while test $# -gt 0; do

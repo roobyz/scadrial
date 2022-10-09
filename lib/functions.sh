@@ -25,8 +25,6 @@ shelp() {
         debug                       Mount successfully formatted media
         repair                      Mount successfully formatted media and continue with setup
         h, help                     Print this help text
-    
-    Optional value:                 Password/Passphrase as desired
     "
 }
 
@@ -117,14 +115,4 @@ parse_yaml() {
             }
             { print }'
     ) < "$yaml_file"
-}
-
-get_pass() {
-	if [ -z "${passphrase:-}" ]; then
-		log "Passphrase/password Setup"
-		# shellcheck disable=SC2162
-		read -p "Specify the default password: " -s passphrase
-		# passphrase=123456
-		echo
-	fi
 }
