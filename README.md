@@ -48,7 +48,7 @@ All the key configuration settings can be updated on our yaml file (_scadrial-co
 
 variable | USB or Disk with Serial Console | USB or Disk with Monitor | Image File for Virtual Machine
 ----- | ----- | ----- | -----
-[cfg_scadrial_dist_name](a "Debian-based Distribiton Name") | focal | focal | focal 
+[cfg_scadrial_dist_name](a "Debian-based Distribiton Name") | jammy | jammy | jammy 
 [cfg_scadrial_dist_vers](a "Distribution Version Number") | 20.04 | 20.04 | 20.04
 [cfg_scadrial_device_loop](a "Loop Device Desired. A file that acts as a block-based device. (i.e. ISO or IMG file)") | n | n | **`y`**
 [cfg_scadrial_device_loop_file](a "Loop File Name") | | | **`scadrial.img`**
@@ -70,7 +70,6 @@ variable | USB or Disk with Serial Console | USB or Disk with Monitor | Image Fi
 [cfg_scadrial_network_lan0_addrs](a "DHCPv4 address range for our LAN") | 10.16.35.1/24 | 10.16.35.1/24 | 10.16.35.1/24
 [cfg_scadrial_network_wlan0_iface](a "Interface name for our Wireless Access Point. Must use the name from our machine") | wlp2s0 | wlp2s0 | wlp2s0
 [cfg_scadrial_network_wlan0_addrs](a "DHCPv4 address range for our WAP") | 10.16.45.1/24 | 10.16.45.1/24 | 10.16.45.1/24
-[cfg_scadrial_network_wlan0_pass](a "WAP passphrase") | mypass_1234 | mypass_1234 | mypass_1234
 [cfg_scadrial_network_wlan0_ssid](a "WAP SSID Name") | my_wifi_spot | my_wifi_spot | my_wifi_spot
 
 ### Part Two: Setup Scadrial Boot Media

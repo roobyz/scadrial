@@ -3,7 +3,7 @@
 scadrial:
   # Parameters for the Ubuntu distribution
   dist:
-    name: focal
+    name: jammy
     vers: 20.04
   # Parameters for destination media
   device:
