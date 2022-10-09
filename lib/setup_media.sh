@@ -74,8 +74,7 @@ media_part() {
 }
 
 media_mount() {
-	get_pass
-	open_luks "$passphrase"
+	open_luks "${SCADRIAL_KEY}"
 
 	log "Mount the partitions"
 	#----------------------------------------------------------------------------
@@ -129,12 +128,6 @@ media_reset() {
 
 media_setup() {
 	#----------------------------------------------------------------------------
-	# Function configure the specified media per the config.yaml
-	# Includes partitioning, encryption, mounting, etc.
-	#----------------------------------------------------------------------------
-	get_pass
-
-	#----------------------------------------------------------------------------
 	log "Setup storage media"
 	#----------------------------------------------------------------------------
 	# Unmount binds and media, close crypt, and then remount the media
@@ -161,11 +154,11 @@ media_setup() {
 	#----------------------------------------------------------------------------
 	log "Setup encryption"
 	# Escape any dollar signs in the password
-	suds "echo -n ${passphrase//$/\\$} | cryptsetup -q -v --iter-time 5000 --type luks2 \
+	suds "echo -n ${SCADRIAL_KEY//$/\\$} | cryptsetup -q -v --iter-time 5000 --type luks2 \
 	    --hash sha512 --use-random luksFormat ${cfg_scadrial_device_name}${ppart}2 -"
 	
 	# shellcheck disable=SC2086
-	open_luks "$passphrase"
+	open_luks "${SCADRIAL_KEY}"
 
 	#----------------------------------------------------------------------------
 	log "Create filesystems"
@@ -191,7 +184,9 @@ media_setup() {
 	#----------------------------------------------------------------------------
 	log "Bootstrap the new system"
 	#----------------------------------------------------------------------------
-	suds "debootstrap --no-check-gpg --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_host_path" http://archive.ubuntu.com/ubuntu
+	# log "debootstrap --no-check-gpg --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_host_path"
+	suds "debootstrap --no-check-gpg --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_host_path"
+	# suds "debootstrap --no-check-gpg --arch amd64 $cfg_scadrial_dist_name $cfg_scadrial_host_path" http://archive.ubuntu.com/ubuntu
 	for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
 
 }

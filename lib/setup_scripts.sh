@@ -12,6 +12,7 @@ finish_script() {
 	echo "Setup Scripts folder"
 	suds "mkdir -p  $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 	suds "cp -r ./* $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial/"
+	suds "cp -r ./.env $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial/"
 	suds "cp $cfg_scadrial_host_path/etc/skel/.* $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/ 2> /dev/null"
 
 	echo "Setup Chroot finalize script"
@@ -27,23 +28,16 @@ finish_script() {
 	source "lib/setup_media.sh"
 	# shellcheck disable=SC1091
 	source "lib/setup_scripts.sh"
+	source ".env"
 
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
-
-	# Set passphrase if provided
-	if [ -n "${1:-}" ]; then
-		# Strip any newline from assigned variable
-		passphrase="${1//$'\n'/}"
-	fi
-
-	get_pass
 	
 	#----------------------------------------------------------------------------
 	log "Setup environment, user and access"
 	#----------------------------------------------------------------------------
 	export PATH=/usr/sbin:$PATH
 	useradd -M -s /bin/bash "$cfg_scadrial_host_user"
-	echo "${cfg_scadrial_host_user}:${passphrase}" | chpasswd
+	echo "${cfg_scadrial_host_user}:${SCADRIAL_KEY}" | chpasswd
 	set_sudoer "$cfg_scadrial_host_user"
 
 	# Set correct ownership to home
@@ -97,16 +91,15 @@ finish_script() {
 	#----------------------------------------------------------------------------
 	log "Install applications and kernel"
 	#----------------------------------------------------------------------------
-	echo "deb http://archive.ubuntu.com/ubuntu focal main universe" > /etc/apt/sources.list
-	echo "deb http://archive.ubuntu.com/ubuntu focal-updates main universe" >> /etc/apt/sources.list
-	echo "deb http://archive.ubuntu.com/ubuntu focal-backports main universe" >> /etc/apt/sources.list
-	apt-get update && apt-get -y upgrade
+	echo "deb http://archive.ubuntu.com/ubuntu ${cfg_scadrial_dist_name} main universe" > /etc/apt/sources.list
+	echo "deb http://archive.ubuntu.com/ubuntu ${cfg_scadrial_dist_name}-updates main universe" >> /etc/apt/sources.list
+	echo "deb http://archive.ubuntu.com/ubuntu ${cfg_scadrial_dist_name}-backports main universe" >> /etc/apt/sources.list
+	apt-get update && apt-get -y upgrade --no-install-recommends
 
-	kernel="linux-generic-hwe-${cfg_scadrial_dist_vers}"
+	# kernel="linux-generic-${cfg_scadrial_dist_vers}"
 
-	apt-get install -y --no-install-recommends "$kernel" linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs \
-	git ssh pciutils lvm2 iw gdisk btrfs-progs dkms debootstrap parted fwupd net-tools bridge-utils iproute2 iptables \
-	hostapd isc-dhcp-server ca-certificates curl figlet dosfstools
+	log "Install Additional Applications"
+	apt-get install -y --no-install-recommends linux-image-generic linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils lvm2 iw gdisk btrfs-progs debootstrap parted fwupd net-tools bridge-utils iproute2 iptables hostapd isc-dhcp-server ca-certificates curl figlet dosfstools
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
@@ -215,8 +208,7 @@ finish_script() {
 	suds "chown -R $cfg_scadrial_host_user:$cfg_scadrial_host_user /home/$cfg_scadrial_host_user"
 
 	log "The initial media configuration complete. Pending steps to complete on the host."
-	echo "Exit chroot and umount our media, as follows:"
-	echo "exit"
+	echo "chroot exited... Umount the media, as follows:"
 	echo "sudo ./scadrial-setup.sh unmount"
 
 	#----------------------------------------------------------------------------
@@ -246,6 +238,7 @@ setup_scripts() {
 	source "lib/setup_media.sh"
 	# shellcheck disable=SC1091
 	source "lib/setup_scripts.sh"
+	source ".env"
 
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
@@ -293,7 +286,7 @@ setup_scripts() {
 	echo "Setup networking interfaces"
 	#----------------------------------------------------------------------------
 	# Get the real address for the public interface (wan)
-	riface=$(networkctl -a status | awk '/DHCP4/ {print $1 $2}' | sed 's/Address://' | sed 's/(DHCP4)//')
+	riface=$(networkctl -a status | awk '/DHCP4/ {print $1 $2}' | sed 's/Address://' | sed 's/(DHCP4)//' | head -n 1)
 
 	# Indentify interface hw addresses
 	for p in "${ifaceArray[@]}"; do
@@ -388,11 +381,11 @@ setup_scripts() {
 		# Update configuration file
 		if [[ $d == "wap0" ]]; then
 		  SSID=${cfg_scadrial_network_wap0_ssid}
-		  PASS=${cfg_scadrial_network_wap0_pass}
+		  PASS=${WAP0_PASS}
 		  CHNL=${cfg_scadrial_network_wap0_channel}
 		else
 		  SSID=${cfg_scadrial_network_wap1_ssid}
-		  PASS=${cfg_scadrial_network_wap1_pass}
+		  PASS=${WAP1_PASS}
 		  CHNL=${cfg_scadrial_network_wap1_channel}
 		fi
 
@@ -426,6 +419,38 @@ setup_scripts() {
 
 	EOF
 
+	#----------------------------------------------------------------------------
+	echo "Setup port forwarding"
+	#----------------------------------------------------------------------------
+	cat <<- EOF > /etc/systemd/system/Scadrial-router.service
+	[Unit]
+	Description=Scadrial Router Service
+	After=multi-user.target
+
+	[Service]
+	Type=oneshot
+	RemainAfterExit=true
+
+	# Pre start: port forward udp packets from interfaces on wap and lan to router
+	ExecStart=/sbin/iptables -t nat -A PREROUTING -i wap0 -p udp -j DNAT --to-destination ${riface}
+	ExecStart=/sbin/iptables -t nat -A PREROUTING -i wap1 -p udp -j DNAT --to-destination ${riface}
+	ExecStart=/sbin/iptables -t nat -A PREROUTING -i lan0 -p udp -j DNAT --to-destination ${riface}
+
+	# Start: ensure the wireless and dhcp services are restarted
+	# ExecStart=/usr/bin/systemctl restart hostapd
+	# ExecStart=/usr/bin/systemctl restart isc-dhcp-server
+
+	# Post stop: clean up the udp port forwarding to router
+	ExecStop=/sbin/iptables -t nat -D PREROUTING -i wap0 -p udp -j DNAT --to-destination ${riface}
+	ExecStop=/sbin/iptables -t nat -D PREROUTING -i wap1 -p udp -j DNAT --to-destination ${riface}
+	ExecStop=/sbin/iptables -t nat -D PREROUTING -i lan1 -p udp -j DNAT --to-destination ${riface}
+
+	[Install]
+	WantedBy=graphical.target
+	EOF
+
+	systemctl enable Scadrial-router
+
 	log "Reboot to ensure DHCP is set on local interfaces."
 	SEOF
 
@@ -439,10 +464,11 @@ setup_scripts() {
 	source "lib/setup_media.sh"
 	# shellcheck disable=SC1091
 	source "lib/setup_scripts.sh"
+	source ".env"
 
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 	
-	export MISTBORN_DEFAULT_PASSWORD="${passphrase//$/\\$}"
+	export MISTBORN_DEFAULT_PASSWORD="${SCADRIAL_KEY//$/\\$}"
 	export MISTBORN_INSTALL_COCKPIT="${cfg_scadrial_host_cpit}"
 
 	#----------------------------------------------------------------------------
@@ -467,6 +493,7 @@ setup_scripts() {
 	source "lib/setup_media.sh"
 	# shellcheck disable=SC1091
 	source "lib/setup_scripts.sh"
+	source ".env"
 
 	eval "$(parse_yaml scadrial-config.yaml "cfg_")"
 
