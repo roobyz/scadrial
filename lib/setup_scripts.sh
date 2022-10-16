@@ -216,10 +216,10 @@ setup_chroot_script() {
 	#----------------------------------------------------------------------------
 	echo "cd scadrial"
 	echo "sudo systemctl restart systemd-networkd"
-	echo "sudo ./system_01_networking.sh"
-	echo "sudo ./system_02_mistborn.sh"
+	echo "sudo ./host_01_networking.sh"
+	echo "sudo ./host_02_mistborn.sh"
 	echo "Still work in progress..."
-	echo "sudo ./system_03_hardening.sh"
+	echo "sudo ./host_03_hardening.sh"
 	SEOF
 
 	# Move the script to our media device
@@ -229,7 +229,7 @@ setup_chroot_script() {
 
 stage_host_scripts() {
 	echo "Setup Networking script"
-	cat <<- 'SEOF' > system_01_networking.sh
+	cat <<- 'SEOF' > host_01_networking.sh
 	#!/bin/bash
 
 	# shellcheck disable=SC1091
@@ -487,7 +487,7 @@ stage_host_scripts() {
 	SEOF
 
 	echo "Setup Mistborn install script"
-	cat <<- 'SEOF' > system_02_mistborn.sh
+	cat <<- 'SEOF' > host_02_mistborn.sh
 	#!/bin/bash
 	
 	# shellcheck disable=SC1091
@@ -516,7 +516,7 @@ stage_host_scripts() {
 	SEOF
 
 	echo "Setup Hardening script"
-	cat <<- 'SEOF' > system_03_hardening.sh
+	cat <<- 'SEOF' > host_03_hardening.sh
 	#!/bin/bash
 
 	# shellcheck disable=SC1091
@@ -555,6 +555,6 @@ stage_host_scripts() {
 	SEOF
 
 	# Move the scripts to our media device
-	sudo chmod +x system_*.sh
-	suds "mv system_*.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
+	sudo chmod +x host_*.sh
+	suds "mv host_*.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 }
