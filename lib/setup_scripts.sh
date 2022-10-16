@@ -8,7 +8,7 @@ echo "$cfg_scadrial_device_name $cfg_scadrial_device_pool $cfg_scadrial_device_o
 # shellcheck disable=SC2154
 echo "$cfg_scadrial_host_name $cfg_scadrial_host_user $cfg_scadrial_host_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
 
-finish_script() {
+setup_chroot_script() {
 	echo "Setup Scripts folder"
 	suds "mkdir -p  $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 	suds "cp -r ./* $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial/"
@@ -227,7 +227,7 @@ finish_script() {
 	suds "mv scadrial-finalize.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 }
 
-setup_scripts() {
+stage_host_scripts() {
 	echo "Setup Networking script"
 	cat <<- 'SEOF' > system_01_networking.sh
 	#!/bin/bash
@@ -376,23 +376,55 @@ setup_scripts() {
 	sed -i 's/.*RestartSec=.*/RestartSec=5/' /lib/systemd/system/hostapd.service
 
 	for d in wap0 wap1; do
-		cp ./hostapd/${d}.conf /etc/hostapd/${d}.conf
+	  cp ./hostapd/hostapd.conf /etc/hostapd/${d}.conf
 
-		# Update configuration file
-		if [[ $d == "wap0" ]]; then
-		  SSID=${cfg_scadrial_network_wap0_ssid}
-		  PASS=${WAP0_PASS}
-		  CHNL=${cfg_scadrial_network_wap0_channel}
-		else
-		  SSID=${cfg_scadrial_network_wap1_ssid}
-		  PASS=${WAP1_PASS}
-		  CHNL=${cfg_scadrial_network_wap1_channel}
-		fi
+	  venabl=cfg_scadrial_network_${d}_enabled
+	  if [[ ${!venabl} == "true" ]]; then
+	    vssid=cfg_scadrial_network_${d}_ssid
+	    vcntry=cfg_scadrial_network_${d}_cntry
+	    vchanl=cfg_scadrial_network_${d}_channel
+	    vhtcap=cfg_scadrial_network_${d}_ht_capab
+	    vpmode=cfg_scadrial_network_${d}_mode
+	    vvthcp=cfg_scadrial_network_${d}_vht_capab
+	    vwidth=cfg_scadrial_network_${d}_width
+	    vctri0=cfg_scadrial_network_${d}_vht_center_idx0
+	    vctri1=cfg_scadrial_network_${d}_vht_center_idx1
+	    vkmgmt=cfg_scadrial_network_${d}_key_mgmt
+	    vwpass=${d}_pass
 
-		sed -i "s/^ssid=.*/ssid=${SSID}/" /etc/hostapd/${d}.conf
-		sed -i "s/wpa_passphrase=.*/wpa_passphrase=${PASS}/" /etc/hostapd/${d}.conf
-		sed -i "s/^channel=.*/channel=${CHNL}/" /etc/hostapd/${d}.conf
-		systemctl enable hostapd@${d}
+	    sed -i "s/^ssid=.*/ssid=${!vssid}/" /etc/hostapd/${d}.conf
+	    sed -i "s/^interface=.*/interface=${d}/" /etc/hostapd/${d}.conf
+	    sed -i "s/^country_code=.*/country_code=${!vcntry}/" /etc/hostapd/${d}.conf
+	    sed -i "s/^channel=.*/channel=${!vchanl}/" /etc/hostapd/${d}.conf
+	    sed -i "s/^ht_capab=.*/ht_capab=${!vhtcap}/" /etc/hostapd/${d}.conf
+
+	    if [[ ${!vpmode} == 'vht' ]]; then
+	      sed -i "s/^hw_mode=.*/hw_mode=a/" /etc/hostapd/${d}.conf
+	      sed -i "s/^ieee80211ac=.*/ieee80211ac=1/" /etc/hostapd/${d}.conf
+	      sed -i "s/^require_vht=.*/require_vht=1/" /etc/hostapd/${d}.conf
+	    else
+	      sed -i "s/^hw_mode=.*/hw_mode=g/" /etc/hostapd/${d}.conf
+	      sed -i "s/^ieee80211ac=.*/ieee80211ac=0/" /etc/hostapd/${d}.conf
+	      sed -i "s/^require_vht=.*/require_vht=0/" /etc/hostapd/${d}.conf
+	    fi
+
+	    sed -i "s/^vht_capab=.*/vht_capab=${!vvthcp}/" /etc/hostapd/${d}.conf
+
+	    if [[ ${!vchanl} == '0' ]]; then
+	      sed -i "s/^vht_oper_chwidth=.*/#vht_oper_chwidth=${!vwidth}/" /etc/hostapd/${d}.conf
+	      sed -i "s/^vht_oper_centr_freq_seg0_idx=.*/#vht_oper_centr_freq_seg0_idx=${!vctri0}/" /etc/hostapd/${d}.conf
+	      sed -i "s/^vht_oper_centr_freq_seg1_idx=.*/#vht_oper_centr_freq_seg1_idx=${!vctri1}/" /etc/hostapd/${d}.conf
+	    else
+	      sed -i "s/^vht_oper_chwidth=.*/vht_oper_chwidth=${!vwidth}/" /etc/hostapd/${d}.conf
+	      sed -i "s/^vht_oper_centr_freq_seg0_idx=.*/vht_oper_centr_freq_seg0_idx=${!vctri0}/" /etc/hostapd/${d}.conf
+	      sed -i "s/^vht_oper_centr_freq_seg1_idx=.*/vht_oper_centr_freq_seg1_idx=${!vctri1}/" /etc/hostapd/${d}.conf
+	    fi
+
+	    sed -i "s/^wpa_key_mgmt=.*/wpa_key_mgmt=${!vkmgmt}/" /etc/hostapd/${d}.conf
+	    sed -i "s/^wpa_passphrase=.*/wpa_passphrase=${!vwpass}/" /etc/hostapd/${d}.conf
+	  fi
+
+	  systemctl enable hostapd@${d}
 	done
 
 	systemctl disable hostapd
@@ -422,7 +454,7 @@ setup_scripts() {
 	#----------------------------------------------------------------------------
 	echo "Setup port forwarding"
 	#----------------------------------------------------------------------------
-	cat <<- EOF > /etc/systemd/system/Scadrial-router.service
+	cat <<- EOF > /etc/systemd/system/scadrial-router.service
 	[Unit]
 	Description=Scadrial Router Service
 	After=multi-user.target
@@ -449,7 +481,7 @@ setup_scripts() {
 	WantedBy=graphical.target
 	EOF
 
-	systemctl enable Scadrial-router
+	systemctl enable scadrial-router
 
 	log "Reboot to ensure DHCP is set on local interfaces."
 	SEOF
