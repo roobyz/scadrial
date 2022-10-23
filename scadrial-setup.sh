@@ -34,14 +34,6 @@ for i in "${pre_reqs[@]}"; do
 	cmd_check "$i"
 done
 
-exec_chroot_script() {
-	#----------------------------------------------------------------------------
-	log "Entering the new host chroot system and finalizing our setup..."
-	#----------------------------------------------------------------------------
-	HOST_USER=${cfg_scadrial_host_user} sudo -E chroot $cfg_scadrial_host_path /bin/bash -c \
-	    'cd /home/${HOST_USER}/scadrial; ./scadrial-finalize.sh ${SCADRIAL_KEY}; exit'
-}
-
 # Process the specified parameters
 while test $# -gt 0; do
     case "${1}" in
@@ -59,22 +51,12 @@ while test $# -gt 0; do
 				exit 0
 			fi
 		fi
-		# Setup storage media/environment
+		# Setup storage media/environment (partitioning/deboostrap)
 		media_setup
 		shift
       ;;
     unmount)
 		media_reset
-		exit 0
-      ;;
-    scripts)
-		Check if meadia already configured.
-		if [[ ! "$(df --output=target | grep -c "${cfg_scadrial_host_path}")" != "0" ]]; then
-			log "The media is not mounted. First run the debug setup."
-			exit 1
-		fi
-		stage_host_scripts
-		# exec_chroot_script
 		exit 0
       ;;
     debug)
@@ -86,10 +68,21 @@ while test $# -gt 0; do
 		exit 0
       ;;
     repair)
+		# This skips the repartition/deboostrap steps as completed on install
 		media_reset
 		media_mount
 		for b in dev dev/pts proc sys; do suds "mount -B /$b $cfg_scadrial_host_path/$b"; done
 		shift
+      ;;
+    scripts)
+		# This step only reconfigures the host scripts
+		# Check if meadia already configured.
+		if [[ ! "$(df --output=target | grep -c "${cfg_scadrial_host_path}")" != "0" ]]; then
+			log "The media is not mounted. First run the debug setup."
+			exit 1
+		fi
+		stage_host_scripts
+		exit 0
       ;;
     *)
 		shelp
@@ -102,6 +95,5 @@ done
 #----------------------------------------------------------------------------
 log "Generate final system scripts."
 #----------------------------------------------------------------------------
-setup_chroot_script
+setup_chroot_environment
 stage_host_scripts
-exec_chroot_script
