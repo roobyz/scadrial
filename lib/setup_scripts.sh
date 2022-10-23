@@ -8,7 +8,7 @@ echo "$cfg_scadrial_device_name $cfg_scadrial_device_pool $cfg_scadrial_device_o
 # shellcheck disable=SC2154
 echo "$cfg_scadrial_host_name $cfg_scadrial_host_user $cfg_scadrial_host_path $cfg_scadrial_dist_name $cfg_scadrial_dist_vers" > /dev/null
 
-setup_chroot_script() {
+setup_chroot_environment() {
 	echo "Setup Scripts folder"
 	suds "mkdir -p  $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
 	suds "cp -r ./* $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial/"
@@ -96,10 +96,10 @@ setup_chroot_script() {
 	echo "deb http://archive.ubuntu.com/ubuntu ${cfg_scadrial_dist_name}-backports main universe" >> /etc/apt/sources.list
 	apt-get update && apt-get -y upgrade --no-install-recommends
 
-	# kernel="linux-generic-${cfg_scadrial_dist_vers}"
+	# header="linux-headers-${cfg_scadrial_dist_vers}"
 
 	log "Install Additional Applications"
-	apt-get install -y --no-install-recommends linux-image-generic linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils lvm2 iw gdisk btrfs-progs debootstrap parted fwupd net-tools bridge-utils iproute2 iptables hostapd isc-dhcp-server ca-certificates curl figlet dosfstools
+	apt-get install -y --no-install-recommends linux-image-generic linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils lvm2 iw gdisk btrfs-progs debootstrap parted fwupd net-tools procps bridge-utils iproute2 iptables hostapd isc-dhcp-server ca-certificates curl figlet dosfstools
 
 	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
@@ -225,6 +225,13 @@ setup_chroot_script() {
 	# Move the script to our media device
 	sudo chmod +x scadrial-finalize.sh
 	suds "mv scadrial-finalize.sh $cfg_scadrial_host_path/home/$cfg_scadrial_host_user/scadrial"
+
+	#----------------------------------------------------------------------------
+	log "Entering the new host chroot system and finalizing our setup..."
+	#----------------------------------------------------------------------------
+	HOST_USER=${cfg_scadrial_host_user} sudo -E chroot $cfg_scadrial_host_path /bin/bash -c \
+	    'cd /home/${HOST_USER}/scadrial; ./scadrial-finalize.sh ${SCADRIAL_KEY}; exit'
+	rm ${cfg_scadrial_host_path}/home/${cfg_scadrial_host_user}/scadrial/scadrial-finalize.sh
 }
 
 stage_host_scripts() {
@@ -376,10 +383,12 @@ stage_host_scripts() {
 	sed -i 's/.*RestartSec=.*/RestartSec=5/' /lib/systemd/system/hostapd.service
 
 	for d in wap0 wap1; do
-	  cp ./hostapd/hostapd.conf /etc/hostapd/${d}.conf
-
+	  # Check whether device is enabled
 	  venabl=cfg_scadrial_network_${d}_enabled
 	  if [[ ${!venabl} == "true" ]]; then
+	    devcfg=/etc/hostapd/${d}.conf
+	    cp ./hostapd/hostapd.conf ${devcfg}
+	
 	    vssid=cfg_scadrial_network_${d}_ssid
 	    vcntry=cfg_scadrial_network_${d}_cntry
 	    vchanl=cfg_scadrial_network_${d}_channel
@@ -392,36 +401,36 @@ stage_host_scripts() {
 	    vkmgmt=cfg_scadrial_network_${d}_key_mgmt
 	    vwpass=${d}_pass
 
-	    sed -i "s/^ssid=.*/ssid=${!vssid}/" /etc/hostapd/${d}.conf
-	    sed -i "s/^interface=.*/interface=${d}/" /etc/hostapd/${d}.conf
-	    sed -i "s/^country_code=.*/country_code=${!vcntry}/" /etc/hostapd/${d}.conf
-	    sed -i "s/^channel=.*/channel=${!vchanl}/" /etc/hostapd/${d}.conf
-	    sed -i "s/^ht_capab=.*/ht_capab=${!vhtcap}/" /etc/hostapd/${d}.conf
+	    sed -i "s/^ssid=.*/ssid=${!vssid}/" ${devcfg}
+	    sed -i "s/^interface=.*/interface=${d}/" ${devcfg}
+	    sed -i "s/^country_code=.*/country_code=${!vcntry}/" ${devcfg}
+	    sed -i "s/^channel=.*/channel=${!vchanl}/" ${devcfg}
+	    sed -i "s/^ht_capab=.*/ht_capab=${!vhtcap}/" ${devcfg}
 
 	    if [[ ${!vpmode} == 'vht' ]]; then
-	      sed -i "s/^hw_mode=.*/hw_mode=a/" /etc/hostapd/${d}.conf
-	      sed -i "s/^ieee80211ac=.*/ieee80211ac=1/" /etc/hostapd/${d}.conf
-	      sed -i "s/^require_vht=.*/require_vht=1/" /etc/hostapd/${d}.conf
+	      sed -i "s/^hw_mode=.*/hw_mode=a/" ${devcfg}
+	      sed -i "s/^ieee80211ac=.*/ieee80211ac=1/" ${devcfg}
+	      sed -i "s/^require_vht=.*/require_vht=1/" ${devcfg}
 	    else
-	      sed -i "s/^hw_mode=.*/hw_mode=g/" /etc/hostapd/${d}.conf
-	      sed -i "s/^ieee80211ac=.*/ieee80211ac=0/" /etc/hostapd/${d}.conf
-	      sed -i "s/^require_vht=.*/require_vht=0/" /etc/hostapd/${d}.conf
+	      sed -i "s/^hw_mode=.*/hw_mode=g/" ${devcfg}
+	      sed -i "s/^ieee80211ac=.*/ieee80211ac=0/" ${devcfg}
+	      sed -i "s/^require_vht=.*/require_vht=0/" ${devcfg}
 	    fi
 
-	    sed -i "s/^vht_capab=.*/vht_capab=${!vvthcp}/" /etc/hostapd/${d}.conf
+	    sed -i "s/^vht_capab=.*/vht_capab=${!vvthcp}/" ${devcfg}
 
 	    if [[ ${!vchanl} == '0' ]]; then
-	      sed -i "s/^vht_oper_chwidth=.*/#vht_oper_chwidth=${!vwidth}/" /etc/hostapd/${d}.conf
-	      sed -i "s/^vht_oper_centr_freq_seg0_idx=.*/#vht_oper_centr_freq_seg0_idx=${!vctri0}/" /etc/hostapd/${d}.conf
-	      sed -i "s/^vht_oper_centr_freq_seg1_idx=.*/#vht_oper_centr_freq_seg1_idx=${!vctri1}/" /etc/hostapd/${d}.conf
+	      sed -i "s/^vht_oper_chwidth=.*/#vht_oper_chwidth=${!vwidth}/" ${devcfg}
+	      sed -i "s/^vht_oper_centr_freq_seg0_idx=.*/#vht_oper_centr_freq_seg0_idx=${!vctri0}/" ${devcfg}
+	      sed -i "s/^vht_oper_centr_freq_seg1_idx=.*/#vht_oper_centr_freq_seg1_idx=${!vctri1}/" ${devcfg}
 	    else
-	      sed -i "s/^vht_oper_chwidth=.*/vht_oper_chwidth=${!vwidth}/" /etc/hostapd/${d}.conf
-	      sed -i "s/^vht_oper_centr_freq_seg0_idx=.*/vht_oper_centr_freq_seg0_idx=${!vctri0}/" /etc/hostapd/${d}.conf
-	      sed -i "s/^vht_oper_centr_freq_seg1_idx=.*/vht_oper_centr_freq_seg1_idx=${!vctri1}/" /etc/hostapd/${d}.conf
+	      sed -i "s/^vht_oper_chwidth=.*/vht_oper_chwidth=${!vwidth}/" ${devcfg}
+	      sed -i "s/^vht_oper_centr_freq_seg0_idx=.*/vht_oper_centr_freq_seg0_idx=${!vctri0}/" ${devcfg}
+	      sed -i "s/^vht_oper_centr_freq_seg1_idx=.*/vht_oper_centr_freq_seg1_idx=${!vctri1}/" ${devcfg}
 	    fi
 
-	    sed -i "s/^wpa_key_mgmt=.*/wpa_key_mgmt=${!vkmgmt}/" /etc/hostapd/${d}.conf
-	    sed -i "s/^wpa_passphrase=.*/wpa_passphrase=${!vwpass}/" /etc/hostapd/${d}.conf
+	    sed -i "s/^wpa_key_mgmt=.*/wpa_key_mgmt=${!vkmgmt}/" ${devcfg}
+	    sed -i "s/^wpa_passphrase=.*/wpa_passphrase=${!vwpass}/" ${devcfg}
 	  fi
 
 	  systemctl enable hostapd@${d}
@@ -454,7 +463,9 @@ stage_host_scripts() {
 	#----------------------------------------------------------------------------
 	echo "Setup port forwarding"
 	#----------------------------------------------------------------------------
-	cat <<- EOF > /etc/systemd/system/scadrial-router.service
+	rtrsvc=/etc/systemd/system/scadrial-router.service
+
+	cat <<- EOF > ${rtrsvc}
 	[Unit]
 	Description=Scadrial Router Service
 	After=multi-user.target
@@ -463,22 +474,28 @@ stage_host_scripts() {
 	Type=oneshot
 	RemainAfterExit=true
 
-	# Pre start: port forward udp packets from interfaces on wap and lan to router
-	ExecStart=/sbin/iptables -t nat -A PREROUTING -i wap0 -p udp -j DNAT --to-destination ${riface}
-	ExecStart=/sbin/iptables -t nat -A PREROUTING -i wap1 -p udp -j DNAT --to-destination ${riface}
-	ExecStart=/sbin/iptables -t nat -A PREROUTING -i lan0 -p udp -j DNAT --to-destination ${riface}
-
-	# Start: ensure the wireless and dhcp services are restarted
-	# ExecStart=/usr/bin/systemctl restart hostapd
-	# ExecStart=/usr/bin/systemctl restart isc-dhcp-server
-
+	# Pre start: port forward udp packets from interfaces to router
 	# Post stop: clean up the udp port forwarding to router
-	ExecStop=/sbin/iptables -t nat -D PREROUTING -i wap0 -p udp -j DNAT --to-destination ${riface}
-	ExecStop=/sbin/iptables -t nat -D PREROUTING -i wap1 -p udp -j DNAT --to-destination ${riface}
+	ExecStart=/sbin/iptables -t nat -A PREROUTING -i lan0 -p udp -j DNAT --to-destination ${riface}
 	ExecStop=/sbin/iptables -t nat -D PREROUTING -i lan1 -p udp -j DNAT --to-destination ${riface}
 
+	EOF
+
+	for d in wap0 wap1; do
+	  # Check whether device is enabled
+	  venabl=cfg_scadrial_network_${d}_enabled
+	  if [[ ${!venabl} == "true" ]]; then
+	    cat <<- EOF >> ${rtrsvc}
+	    ExecStart=/sbin/iptables -t nat -A PREROUTING -i ${d} -p udp -j DNAT --to-destination ${riface}
+	    ExecStop=/sbin/iptables -t nat -D PREROUTING -i ${d} -p udp -j DNAT --to-destination ${riface}
+	    
+	    EOF
+	  fi
+	done
+
+	cat <<- EOF >> ${rtrsvc}
 	[Install]
-	WantedBy=graphical.target
+	WantedBy=graphical.target	    
 	EOF
 
 	systemctl enable scadrial-router
