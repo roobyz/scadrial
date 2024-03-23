@@ -27,38 +27,20 @@ open_luks() {
 		media_file
 	fi
 
-	echo "partprobe"
-	suds "partprobe ${cfg_scadrial_device_name}"
-	media_part
-
-	# Check whether the same base-name is used
-	if [ "$(cd /dev/mapper/ && find . -maxdepth 1 -name 'crypt_root*' | wc -l)" == "0" ]; then
-		# Name our new device
-		luks_dev="${cfg_scadrial_device_luks}0"
-
+	if [ "$(cd /dev/mapper/ && find . -maxdepth 1 -name "${boot_mapper_name}" | wc -l)" == "0" ]; then
 		# Open luks device with passphrase parameter
-		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${luks_dev}"; then
-			err "Luks Unlock Failed"
+		if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${2} ${3}"; then
+			err "${3} Unlock Failed"
 		else
-			echo "Luks Unlocked"
+			echo "${3} Unlocked"
 		fi
 	else
-		# Check name if the target luks device is already open
-		if [ "$(lsblk "${cfg_scadrial_device_name}${ppart}2" | grep -c crypt_root)" == 0 ]; then
-			# Increment luks device name sequence
-			luks_dev="${cfg_scadrial_device_luks}$(cd /dev/mapper/ && find . -maxdepth 1 -name 'crypt_root*' | wc -l)"
-
-			# Open luks device with passphrase parameter (accounting for any dollar signs)
-			if ! suds "echo -n ${1//$/\\$} | cryptsetup --key-file=- luksOpen ${cfg_scadrial_device_name}${ppart}2 ${luks_dev}"; then
-				err "Luks Unlock Failed"
-			else
-				echo "Luks Unlocked"
-			fi
-		fi 
+		echo "Confirmed: ${3} Unlocked"
 	fi
 }
 
 media_part() {
+	suds "partprobe ${cfg_scadrial_device_name}"
 	# shellcheck disable=SC2001
 	dname="$(echo "${cfg_scadrial_device_name}" | sed 's|/dev/||')"
 
@@ -71,28 +53,40 @@ media_part() {
 	else
 		ppart="p"
 	fi
+
+	boot_cryptdevice="${cfg_scadrial_device_name}${ppart}3"
+	boot_blkpartuuid=`sudo blkid -s PARTUUID -o value ${boot_cryptdevice}`
+	boot_mapper_name=cryptroot-puuid-$boot_blkpartuuid
+	boot_mapper_path=/dev/mapper/$boot_mapper_name
+
+	boot_lukskeyfile=/etc/luks/boot_os.keyfile
+	boot_efidev="$(blkid -s UUID -o value ${cfg_scadrial_device_name}${ppart}2)"
+	boot_blkdev=`sudo blkid -s UUID -o value ${boot_cryptdevice}`
+
 }
 
 media_mount() {
-	open_luks "${SCADRIAL_KEY}"
+	# Setup parition naming
+	media_part
+
+	# Decrypt the boot partition
+	open_luks "${SCADRIAL_KEY}" ${boot_cryptdevice} ${boot_mapper_name}
 
 	log "Mount the partitions"
 	#----------------------------------------------------------------------------
 	suds "rm -rf ${cfg_scadrial_host_path}"
 	suds "mkdir -p ${cfg_scadrial_host_path}"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@      /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}"
-	suds "mkdir -p ${cfg_scadrial_host_path}/boot"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@boot  /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/boot"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@      ${boot_mapper_path} ${cfg_scadrial_host_path}"
 	suds "mkdir -p ${cfg_scadrial_host_path}/{boot/efi,home,opt/mistborn_volumes,var}"
-	suds "mount ${cfg_scadrial_device_name}${ppart}1 ${cfg_scadrial_host_path}/boot/efi"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/home"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@data  /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/opt/mistborn_volumes"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@var   /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/var"
+	suds "mount ${cfg_scadrial_device_name}${ppart}2 ${cfg_scadrial_host_path}/boot/efi"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  ${boot_mapper_path} ${cfg_scadrial_host_path}/home"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@data  ${boot_mapper_path} ${cfg_scadrial_host_path}/opt/mistborn_volumes"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@var   ${boot_mapper_path} ${cfg_scadrial_host_path}/var"
 	suds "mkdir -p ${cfg_scadrial_host_path}/{var/log,var/tmp}"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@log   /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/var/log"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@log   ${boot_mapper_path} ${cfg_scadrial_host_path}/var/log"
 	suds "mkdir -p ${cfg_scadrial_host_path}/var/log/audit"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/var/log/audit"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   /dev/mapper/${luks_dev} ${cfg_scadrial_host_path}/var/tmp"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit ${boot_mapper_path} ${cfg_scadrial_host_path}/var/log/audit"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   ${boot_mapper_path} ${cfg_scadrial_host_path}/var/tmp"
 	echo "Done"
 }
 
@@ -112,8 +106,7 @@ media_reset() {
 
 			# close encrypted device
 			media_part
-			luks_dev="crypt_root$(lsblk "${cfg_scadrial_device_name}${ppart}2" | awk '/crypt_root/ {print $1}' | sed 's/.*crypt_root//')"
-			suds "cryptsetup luksClose ${luks_dev}"
+			suds "cryptsetup luksClose ${boot_mapper_path}"
 
 			if [ "$cfg_scadrial_device_loop" == "y" ]; then
 				losetup -d "${cfg_scadrial_device_name}"
@@ -139,37 +132,42 @@ media_setup() {
 	fi
 
 	# partitions our media
-	suds "sgdisk -og ${cfg_scadrial_device_name} \
-	--new=1::+260M  --typecode=1:EF00 --change-name=1:'EFI partition' \
-	--new=2::0      --typecode=2:8304 --change-name=2:'Linux partition'"
+	log "Generate Partitions"
+	suds "sgdisk --zap-all ${cfg_scadrial_device_name}"
+	suds "sgdisk ${cfg_scadrial_device_name} \
+	--new=1::+1M    --typecode=1:EF02 --change-name=1:'BIOS boot partition' \
+	--new=2::+512M  --typecode=2:EF00 --change-name=2:'EFI system partition' \
+	--new=3::0      --typecode=3:8304 --change-name=3:'Linux root partition'"
 
 	suds "sgdisk -p ${cfg_scadrial_device_name}"
-	suds "partprobe ${cfg_scadrial_device_name}"
 
+	# Setup ppart attribute for parition naming
 	media_part
+	log "Boot Target: ${boot_mapper_name}"
 
 	suds "wipefs -af ${cfg_scadrial_device_name}${ppart}1"
 	suds "wipefs -af ${cfg_scadrial_device_name}${ppart}2"
+	suds "wipefs -af ${cfg_scadrial_device_name}${ppart}3"
 
 	#----------------------------------------------------------------------------
 	log "Setup encryption"
 	# Escape any dollar signs in the password
 	suds "echo -n ${SCADRIAL_KEY//$/\\$} | cryptsetup -q -v --iter-time 5000 --type luks2 \
-	    --hash sha512 --use-random luksFormat ${cfg_scadrial_device_name}${ppart}2 -"
+	    --hash sha512 --use-random --pbkdf pbkdf2 luksFormat ${boot_cryptdevice} -"
 	
 	# shellcheck disable=SC2086
-	open_luks "${SCADRIAL_KEY}"
+	open_luks "${SCADRIAL_KEY}" ${boot_cryptdevice} ${boot_mapper_name}
 
 	#----------------------------------------------------------------------------
 	log "Create filesystems"
-	suds "mkfs.vfat -vF32 ${cfg_scadrial_device_name}${ppart}1"
-	suds "mkfs.btrfs -L ${luks_dev} /dev/mapper/${luks_dev}"
+	suds "mkfs.vfat -vF32 ${cfg_scadrial_device_name}${ppart}2"
+	suds "mkfs.btrfs -L ${boot_cryptdevice} ${boot_mapper_path}"
 
 	suds "rm -rf ${cfg_scadrial_device_pool} && mkdir ${cfg_scadrial_device_pool}"
 
-	suds "mount -t btrfs -o ${cfg_scadrial_device_optn} /dev/mapper/${luks_dev} ${cfg_scadrial_device_pool}"
+	suds "mount -t btrfs -o ${cfg_scadrial_device_optn} ${boot_mapper_path} ${cfg_scadrial_device_pool}"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@"
-	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@boot"
+	# suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@boot"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@home"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@data"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@var"

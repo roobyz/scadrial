@@ -49,7 +49,7 @@ All the key configuration settings can be updated on our yaml file (_scadrial-co
 variable | USB or Disk with Serial Console | USB or Disk with Monitor | Image File for Virtual Machine
 ----- | ----- | ----- | -----
 [cfg_scadrial_dist_name](a "Debian-based Distribiton Name") | jammy | jammy | jammy 
-[cfg_scadrial_dist_vers](a "Distribution Version Number") | 20.04 | 20.04 | 20.04
+[cfg_scadrial_dist_vers](a "Distribution Version Number") | 22.04 | 22.04 | 22.04
 [cfg_scadrial_device_loop](a "Loop Device Desired. A file that acts as a block-based device. (i.e. ISO or IMG file)") | n | n | **`y`**
 [cfg_scadrial_device_loop_file](a "Loop File Name") | | | **`scadrial.img`**
 [cfg_scadrial_device_loop_size](a "Loop File Size") | | | **`8G`**

@@ -58,27 +58,23 @@ setup_chroot_environment() {
 	log "Configure partitions"
 	#----------------------------------------------------------------------------
 	media_part
-	luks_dev="crypt_root$(lsblk ${cfg_scadrial_device_name}${ppart}2 | awk '/crypt_root/ {print $1}' | sed 's/.*crypt_root//')"
-	pluks="$(blkid -s PARTUUID -o value ${cfg_scadrial_device_name}${ppart}2)"
 
 	# Setup the device UUID that contains our luks volume
 	echo "# <target name>	<source device>		<key file>	<options>" > /etc/crypttab
-	echo "$luks_dev PARTUUID=$pluks none luks,discard" >> /etc/crypttab
+	echo "$boot_mapper_name UUID=$boot_blkdev none luks,discard" >> /etc/crypttab
+	luks_device="$(blkid -s UUID -o value $boot_mapper_path)"
+	
 
 	# Setup the partitions
-	eboot="$(blkid -s UUID -o value ${cfg_scadrial_device_name}${ppart}1)"
-	croot="$(blkid -s UUID -o value /dev/mapper/$luks_dev)"
-
 	cat <<- EOF | tee /etc/fstab
-	UUID=$croot  /                     btrfs   rw,${cfg_scadrial_device_optn},subvol=@                           0 0
-	UUID=$croot  /boot                 btrfs   rw,${cfg_scadrial_device_optn},subvol=@boot,nosuid,nodev          0 0
-	UUID=$eboot                             /boot/efi             vfat    rw,umask=0077                                           0 1
-	UUID=$croot  /home                 btrfs   rw,${cfg_scadrial_device_optn},subvol=@home,nosuid,nodev          0 0
-	UUID=$croot  /opt/mistborn_volumes btrfs   rw,${cfg_scadrial_device_optn},subvol=@data,nosuid,nodev,noexec   0 0
-	UUID=$croot  /var                  btrfs   rw,${cfg_scadrial_device_optn},subvol=@var                        0 0
-	UUID=$croot  /var/log              btrfs   rw,${cfg_scadrial_device_optn},subvol=@log,nosuid,nodev,noexec    0 0
-	UUID=$croot  /var/log/audit        btrfs   rw,${cfg_scadrial_device_optn},subvol=@audit,nosuid,nodev,noexec  0 0
-	UUID=$croot  /var/tmp              btrfs   rw,${cfg_scadrial_device_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
+	UUID=$luks_device  /                     btrfs   rw,${cfg_scadrial_device_optn},subvol=@                           0 0
+	UUID=$boot_efidev                             /boot/efi             vfat    rw,umask=0077                                           0 1
+	UUID=$luks_device  /home                 btrfs   rw,${cfg_scadrial_device_optn},subvol=@home,nosuid,nodev          0 0
+	UUID=$luks_device  /opt/mistborn_volumes btrfs   rw,${cfg_scadrial_device_optn},subvol=@data,nosuid,nodev,noexec   0 0
+	UUID=$luks_device  /var                  btrfs   rw,${cfg_scadrial_device_optn},subvol=@var                        0 0
+	UUID=$luks_device  /var/log              btrfs   rw,${cfg_scadrial_device_optn},subvol=@log,nosuid,nodev,noexec    0 0
+	UUID=$luks_device  /var/log/audit        btrfs   rw,${cfg_scadrial_device_optn},subvol=@audit,nosuid,nodev,noexec  0 0
+	UUID=$luks_device  /var/tmp              btrfs   rw,${cfg_scadrial_device_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
 	tmpfs                                      /tmp                  tmpfs   rw,noexec,nosuid,nodev                     0 0
 	none                                       /run/shm              tmpfs   rw,noexec,nosuid,nodev                     0 0
 	none                                       /dev/shm              tmpfs   rw,noexec,nosuid,nodev                     0 0
@@ -99,9 +95,11 @@ setup_chroot_environment() {
 	# header="linux-headers-${cfg_scadrial_dist_vers}"
 
 	log "Install Additional Applications"
-	apt-get install -y --no-install-recommends linux-image-generic linux-firmware cryptsetup initramfs-tools cryptsetup-initramfs git ssh pciutils lvm2 iw gdisk btrfs-progs debootstrap parted fwupd net-tools procps bridge-utils iproute2 iptables hostapd isc-dhcp-server ca-certificates curl figlet dosfstools
+	apt-get install -y --no-install-recommends linux-image-generic linux-firmware cryptsetup initramfs-tools initramfs-tools-core cryptsetup-initramfs git ssh pciutils lvm2 iw gdisk btrfs-progs debootstrap parted fwupd net-tools procps bridge-utils iproute2 iptables hostapd isc-dhcp-server ca-certificates curl figlet dosfstools grub-pc grub-efi-amd64-bin efibootmgr
 
-	echo 'HOOKS="amd64_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
+	echo 'HOOKS="amd64_microcode intel_microcode base keyboard udev autodetect modconf block keymap encrypt btrfs filesystems"' > /etc/mkinitcpio.conf
+	
+	# Restrict the pattern of keyfiles to avoid leaking key material for the initramfs hook
 	sed -i "s|#KEYFILE_PATTERN=|KEYFILE_PATTERN=/etc/luks/*.keyfile|g" /etc/cryptsetup-initramfs/conf-hook
 	sed -i "/UMASK=0077/d" /etc/initramfs-tools/initramfs.conf
 	echo "UMASK=0077" >> /etc/initramfs-tools/initramfs.conf
@@ -110,7 +108,7 @@ setup_chroot_environment() {
 	chmod 700 /home/${cfg_scadrial_host_user}/.ssh && chmod 600 /home/${cfg_scadrial_host_user}/.ssh/authorized_keys
 
 	#----------------------------------------------------------------------------
-	figlet "Scadrial: Setup systemd-boot"
+	figlet "Setup EFI and Legacy boot"
 	#----------------------------------------------------------------------------
 	# Set default boot menu
 	mkdir -p /boot/efi/{ubuntu,loader/entries}
@@ -140,18 +138,44 @@ setup_chroot_environment() {
 	title   Ubuntu
 	linux   /ubuntu/vmlinuz
 	initrd  /ubuntu/initrd.img
-	options cryptdevice=PARTUUID=${pluks}:${luks_dev}:allow-discards root=/dev/mapper/${luks_dev} rootflags=subvol=@ rd.luks.options=discard ro ${stty}
+	options cryptdevice=PARTUUID=${boot_blkpartuuid}:${boot_mapper_name}:allow-discards root=${boot_mapper_path} rootflags=subvol=@ rd.luks.options=discard ro ${stty}
 	EOF
 
 	# Copy updated kernel files to boot partition
-	update-initramfs -u -k all
-	LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
-	for FILE in config initrd.img System.map vmlinuz; do
-		cp "/boot/${FILE}-${LATEST}" "/boot/efi/ubuntu/${FILE}"
-	done
+	# update-initramfs -u -k all
+	# LATEST="$(cd /boot/ && ls -1t vmlinuz-* | head -n 1 | sed s/vmlinuz-//)"
+	# for FILE in config initrd.img System.map vmlinuz; do
+	# 	cp "/boot/${FILE}-${LATEST}" "/boot/efi/ubuntu/${FILE}"
+	# done
 
 	# Install systemd-boot to our efi partition
-	bootctl install --path=/boot/efi --no-variables
+	#bootctl install --path=/boot/efi --no-variables
+
+	# Create LUKS key for initramfs. Without this, you will need to enter the password 
+	# twice: once in GRUB, once in initramfs.
+	log "Generate Luks key"
+	mkdir -p /etc/luks
+	dd bs=4096 count=2 if=/dev/urandom of=${boot_lukskeyfile}
+	suds "echo -n ${SCADRIAL_KEY//$/\\$} | cryptsetup luksAddKey ${boot_cryptdevice} ${boot_lukskeyfile} -"
+	chmod u=rx,go-rwx /etc/luks
+	chmod u=r,go-rwx ${boot_lukskeyfile}
+
+	sed -i "/GRUB_ENABLE_CRYPTODISK/d" /etc/default/grub
+	echo "GRUB_ENABLE_CRYPTODISK=y" >> /etc/default/grub
+	
+	# this replaces none with /etc/luks/boot_os.keyfile
+	sed -i "s|none|${boot_lukskeyfile}|" /etc/crypttab
+
+	log "Map: $boot_mapper_path"
+	sed -i "s|} root=\${linux_root_device_thisversion} ro|} cryptdevice=PARTUUID=${boot_blkpartuuid}:${boot_mapper_name}:allow-discards root=${boot_mapper_path} ro rd.luks.options=discard ${stty} cryptkey=rootfs:${boot_lukskeyfile}|g" /etc/grub.d/10_linux
+
+	# sed -i "s|GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${boot_blkdev}:${boot_mapper_name}:allow-discards root=${boot_mapper_path} rd.luks.options=discard ${stty} cryptkey=rootfs:${boot_lukskeyfile}\"|g" /etc/default/grub
+
+	update-initramfs -u -k all
+	grub-install ${cfg_scadrial_device_name}
+	grub-install --target=i386-pc ${cfg_scadrial_device_name} --modules="luks2 part_gpt cryptodisk gcry_rijndael pbkdf2 gcry_sha512 btrfs gcry_sha256 gcry_sha1 ext2 luks"
+
+	update-grub
 
 	#----------------------------------------------------------------------------
 	figlet "Scadrial: Git repo setup"
@@ -201,7 +225,8 @@ setup_chroot_environment() {
 	    ${cfg_scadrial_network_wan0_iface}:
 	      dhcp4: yes
 	EOF
-	
+
+	chmod 600 /etc/netplan/01-netcfg.yaml
 	netplan apply
 
 	# Set correct ownership to new home folders
@@ -351,7 +376,8 @@ stage_host_scripts() {
 			EOF
 	  fi
 	done
-
+	
+	chmod 600 /etc/netplan/01-netcfg.yaml
 	netplan apply
 
 	# NOTE: local networks should be up even if there is no carrier (aka: no client connected). This will
