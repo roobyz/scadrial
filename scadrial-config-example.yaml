@@ -16,7 +16,7 @@ scadrial:
     # name: /dev/loop0
     name: /dev/sda
     pool: /mnt/btrfs_pool
-    optn: ssd,noatime,compress=zstd,commit=120
+    optn: rw,noatime,ssd,compress=zstd,space_cache=v2,commit=120
     luks: crypt_root
   # Parameters for chroot environment
   host:
