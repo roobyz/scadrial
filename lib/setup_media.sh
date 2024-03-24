@@ -60,7 +60,8 @@ media_part() {
 	boot_mapper_path=/dev/mapper/$boot_mapper_name
 
 	boot_lukskeyfile=/etc/luks/boot_os.keyfile
-	boot_efidev="$(blkid -s UUID -o value ${cfg_scadrial_device_name}${ppart}2)"
+	grub_dev="$(blkid -s UUID -o value ${cfg_scadrial_device_name}${ppart}1)"
+	uefi_dev="$(blkid -s UUID -o value ${cfg_scadrial_device_name}${ppart}2)"
 	boot_blkdev=`sudo blkid -s UUID -o value ${boot_cryptdevice}`
 
 }
@@ -71,23 +72,17 @@ media_mount() {
 
 	# Decrypt the boot partition
 	open_luks "${SCADRIAL_KEY}" ${boot_cryptdevice} ${boot_mapper_name}
+	suds "rm -rf ${cfg_scadrial_host_path} && mkdir -p ${cfg_scadrial_host_path}"
 
-	log "Mount the partitions"
 	#----------------------------------------------------------------------------
-	suds "rm -rf ${cfg_scadrial_host_path}"
-	suds "mkdir -p ${cfg_scadrial_host_path}"
+	log "Mount partitions"
 	suds "mount -o ${cfg_scadrial_device_optn},subvol=@      ${boot_mapper_path} ${cfg_scadrial_host_path}"
-	suds "mkdir -p ${cfg_scadrial_host_path}/{boot/efi,home,opt/mistborn_volumes,var}"
-	suds "mount ${cfg_scadrial_device_name}${ppart}2 ${cfg_scadrial_host_path}/boot/efi"
+	suds "mount -o rw,noatime ${cfg_scadrial_device_name}${ppart}1 ${cfg_scadrial_host_path}/boot"
+	suds "mount -o rw,noatime ${cfg_scadrial_device_name}${ppart}2 ${cfg_scadrial_host_path}/boot/efi"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@snaps ${boot_mapper_path} ${cfg_scadrial_host_path}/.snapshot"
 	suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  ${boot_mapper_path} ${cfg_scadrial_host_path}/home"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@data  ${boot_mapper_path} ${cfg_scadrial_host_path}/opt/mistborn_volumes"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@var   ${boot_mapper_path} ${cfg_scadrial_host_path}/var"
-	suds "mkdir -p ${cfg_scadrial_host_path}/{var/log,var/tmp}"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@log   ${boot_mapper_path} ${cfg_scadrial_host_path}/var/log"
-	suds "mkdir -p ${cfg_scadrial_host_path}/var/log/audit"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@audit ${boot_mapper_path} ${cfg_scadrial_host_path}/var/log/audit"
-	suds "mount -o ${cfg_scadrial_device_optn},subvol=@tmp   ${boot_mapper_path} ${cfg_scadrial_host_path}/var/tmp"
-	echo "Done"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@opt   ${boot_mapper_path} ${cfg_scadrial_host_path}/opt"
+
 }
 
 media_reset() {
@@ -135,7 +130,7 @@ media_setup() {
 	log "Generate Partitions"
 	suds "sgdisk --zap-all ${cfg_scadrial_device_name}"
 	suds "sgdisk ${cfg_scadrial_device_name} \
-	--new=1::+1M    --typecode=1:EF02 --change-name=1:'BIOS boot partition' \
+	--new=1::+1G    --typecode=1:EF02 --change-name=1:'BIOS boot partition' \
 	--new=2::+512M  --typecode=2:EF00 --change-name=2:'EFI system partition' \
 	--new=3::0      --typecode=3:8304 --change-name=3:'Linux root partition'"
 
@@ -144,7 +139,6 @@ media_setup() {
 	# Setup ppart attribute for parition naming
 	media_part
 	log "Boot Target: ${boot_mapper_name}"
-
 	suds "wipefs -af ${cfg_scadrial_device_name}${ppart}1"
 	suds "wipefs -af ${cfg_scadrial_device_name}${ppart}2"
 	suds "wipefs -af ${cfg_scadrial_device_name}${ppart}3"
@@ -159,25 +153,49 @@ media_setup() {
 	open_luks "${SCADRIAL_KEY}" ${boot_cryptdevice} ${boot_mapper_name}
 
 	#----------------------------------------------------------------------------
-	log "Create filesystems"
-	suds "mkfs.vfat -vF32 ${cfg_scadrial_device_name}${ppart}2"
-	suds "mkfs.btrfs -L ${boot_cryptdevice} ${boot_mapper_path}"
+	log "Setup filesystems"
+	suds "mkfs.ext2 -L grub ${cfg_scadrial_device_name}${ppart}1"
+	suds "mkfs.vfat -nBOOT -vF32 ${cfg_scadrial_device_name}${ppart}2"
+	suds "mkfs.btrfs -f -L ${boot_cryptdevice} ${boot_mapper_path}"
+	suds "rm -rf ${cfg_scadrial_device_pool} && mkdir -p ${cfg_scadrial_device_pool}"
 
-	suds "rm -rf ${cfg_scadrial_device_pool} && mkdir ${cfg_scadrial_device_pool}"
-
+	#----------------------------------------------------------------------------	
+	log "Setup the top-level partitions"
 	suds "mount -t btrfs -o ${cfg_scadrial_device_optn} ${boot_mapper_path} ${cfg_scadrial_device_pool}"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@"
-	# suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@boot"
+	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@opt"
 	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@home"
-	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@data"
-	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@var"
-	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@log"
-	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@audit"
-	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@tmp"
-
+	suds "btrfs subvolume create ${cfg_scadrial_device_pool}/@snaps"
 	suds "umount ${cfg_scadrial_device_pool}"
 
+	#----------------------------------------------------------------------------	
+	log "Mount the top-level partitions"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@      ${boot_mapper_path} ${cfg_scadrial_host_path}"
+	suds "mkdir -p ${cfg_scadrial_host_path}/{.snapshot,home,opt,boot}"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@snaps ${boot_mapper_path} ${cfg_scadrial_host_path}/.snapshot"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@home  ${boot_mapper_path} ${cfg_scadrial_host_path}/home"
+	suds "mount -o ${cfg_scadrial_device_optn},subvol=@opt   ${boot_mapper_path} ${cfg_scadrial_host_path}/opt"
+	suds "mount -o rw,noatime ${cfg_scadrial_device_name}${ppart}1 ${cfg_scadrial_host_path}/boot"
+	suds "mkdir -p ${cfg_scadrial_host_path}/boot/efi"
+
+	#----------------------------------------------------------------------------
+	# These won't have a snapshot taken, since snapshots don't work resursively
+	log "Setup the nested partitions"
+	suds "btrfs subvolume create ${cfg_scadrial_host_path}/audit"
+	suds "btrfs subvolume create ${cfg_scadrial_host_path}/log"
+	suds "btrfs subvolume create ${cfg_scadrial_host_path}/tmp"
+	suds "btrfs subvolume create ${cfg_scadrial_host_path}/var"
+	suds "btrfs subvolume create ${cfg_scadrial_host_path}/var/swap"
+
+	log "Unmount all partitions"
+	suds "umount ${cfg_scadrial_host_path}/.snapshot"
+	suds "umount ${cfg_scadrial_host_path}/boot"
+	suds "umount ${cfg_scadrial_host_path}/home"
+	suds "umount ${cfg_scadrial_host_path}/opt"
+	suds "umount ${cfg_scadrial_host_path}"
+
 	media_mount
+	# exit 0
 	
 	#----------------------------------------------------------------------------
 	log "Bootstrap the new system"
