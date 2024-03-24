@@ -58,27 +58,25 @@ setup_chroot_environment() {
 	log "Configure partitions"
 	#----------------------------------------------------------------------------
 	media_part
-
+	
 	# Setup the device UUID that contains our luks volume
 	echo "# <target name>	<source device>		<key file>	<options>" > /etc/crypttab
 	echo "$boot_mapper_name UUID=$boot_blkdev none luks,discard" >> /etc/crypttab
-	luks_device="$(blkid -s UUID -o value $boot_mapper_path)"
-	
+
+	luks_dev="$(blkid -s UUID -o value $boot_mapper_path)"
 
 	# Setup the partitions
 	cat <<- EOF | tee /etc/fstab
-	UUID=$luks_device  /                     btrfs   rw,${cfg_scadrial_device_optn},subvol=@                           0 0
-	UUID=$boot_efidev                             /boot/efi             vfat    rw,umask=0077                                           0 1
-	UUID=$luks_device  /home                 btrfs   rw,${cfg_scadrial_device_optn},subvol=@home,nosuid,nodev          0 0
-	UUID=$luks_device  /opt/mistborn_volumes btrfs   rw,${cfg_scadrial_device_optn},subvol=@data,nosuid,nodev,noexec   0 0
-	UUID=$luks_device  /var                  btrfs   rw,${cfg_scadrial_device_optn},subvol=@var                        0 0
-	UUID=$luks_device  /var/log              btrfs   rw,${cfg_scadrial_device_optn},subvol=@log,nosuid,nodev,noexec    0 0
-	UUID=$luks_device  /var/log/audit        btrfs   rw,${cfg_scadrial_device_optn},subvol=@audit,nosuid,nodev,noexec  0 0
-	UUID=$luks_device  /var/tmp              btrfs   rw,${cfg_scadrial_device_optn},subvol=@tmp,nosuid,nodev,noexec    0 0
-	tmpfs                                      /tmp                  tmpfs   rw,noexec,nosuid,nodev                     0 0
-	none                                       /run/shm              tmpfs   rw,noexec,nosuid,nodev                     0 0
-	none                                       /dev/shm              tmpfs   rw,noexec,nosuid,nodev                     0 0
-	none                                       /proc                 proc    rw,nosuid,nodev,noexec,relatime,hidepid=2  0 0
+	UUID=$luks_dev  /                btrfs   rw,${cfg_scadrial_device_optn},subvol=@                           0 1
+	UUID=$grub_dev  /boot            ext2    rw,umask=0077,noatime                                             0 1
+	UUID=$uefi_dev                             /boot/efi             vfat    rw,umask=0077,noatime                                   0 1
+	UUID=$luks_dev  /opt             btrfs   rw,${cfg_scadrial_device_optn},subvol=@opt,nosuid,nodev,noexec    0 2
+	UUID=$luks_dev  /home            btrfs   rw,${cfg_scadrial_device_optn},subvol=@home,nosuid,nodev          0 2
+	UUID=$luks_dev  /.snapshots      btrfs   rw,${cfg_scadrial_device_optn},subvol=@snaps                      0 2
+	tmpfs                                      /tmp                  tmpfs   rw,noexec,nosuid,nodev                                  0 0
+	none                                       /run/shm              tmpfs   rw,noexec,nosuid,nodev                                  0 0
+	none                                       /dev/shm              tmpfs   rw,noexec,nosuid,nodev                                  0 0
+	none                                       /proc                 proc    rw,nosuid,nodev,noexec,relatime,hidepid=2               0 0
 
 	# Swap in zram (adjust for your needs)
 	# /dev/zram0        none    swap    defaults      0 0
@@ -108,7 +106,19 @@ setup_chroot_environment() {
 	chmod 700 /home/${cfg_scadrial_host_user}/.ssh && chmod 600 /home/${cfg_scadrial_host_user}/.ssh/authorized_keys
 
 	#----------------------------------------------------------------------------
-	figlet "Setup EFI and Legacy boot"
+	figlet "Setup Swap File"
+	#----------------------------------------------------------------------------
+	truncate -s 0 /var/swap/swapfile
+	chattr +C /var/swap/swapfile
+	btrfs property set /var/swap/swapfile compression none
+	chmod 600 /var/swap/swapfile
+	dd if=/dev/zero of=/var/swap/swapfile bs=1G count=16 status=progress
+	mkswap /var/swap/swapfile
+	swapon /var/swap/swapfile
+	resume_offset="$(sudo btrfs inspect-internal map-swapfile -r /var/swap/swapfile)"
+
+	#----------------------------------------------------------------------------
+	figlet "Setup Grub and UEFI"
 	#----------------------------------------------------------------------------
 	# Set default boot menu
 	mkdir -p /boot/efi/{ubuntu,loader/entries}
@@ -169,11 +179,17 @@ setup_chroot_environment() {
 	log "Map: $boot_mapper_path"
 	sed -i "s|} root=\${linux_root_device_thisversion} ro|} cryptdevice=PARTUUID=${boot_blkpartuuid}:${boot_mapper_name}:allow-discards root=${boot_mapper_path} ro rd.luks.options=discard ${stty} cryptkey=rootfs:${boot_lukskeyfile}|g" /etc/grub.d/10_linux
 
+	# cat <<EOF >> /etc/default/grub
+	# GRUB_CMDLINE_LINUX="resume=UUID=$luks_dev resume_offset=$resume_offset"
+	# EOF
+	sed -i "s|GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"resume=UUID=${luks_dev} resume_offset=${resume_offset}\"|g" /etc/default/grub
+
 	# sed -i "s|GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${boot_blkdev}:${boot_mapper_name}:allow-discards root=${boot_mapper_path} rd.luks.options=discard ${stty} cryptkey=rootfs:${boot_lukskeyfile}\"|g" /etc/default/grub
 
 	update-initramfs -u -k all
-	grub-install ${cfg_scadrial_device_name}
-	grub-install --target=i386-pc ${cfg_scadrial_device_name} --modules="luks2 part_gpt cryptodisk gcry_rijndael pbkdf2 gcry_sha512 btrfs gcry_sha256 gcry_sha1 ext2 luks"
+	grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="Linux"
+	#grub-install ${cfg_scadrial_device_name}
+	#grub-install --target=i386-pc ${cfg_scadrial_device_name} --modules="luks2 part_gpt cryptodisk gcry_rijndael pbkdf2 gcry_sha512 btrfs gcry_sha256 gcry_sha1 ext2 luks"
 
 	update-grub
 
